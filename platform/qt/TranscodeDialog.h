@@ -19,9 +19,11 @@ class TranscodeDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit TranscodeDialog(QWidget *parent = 0);
-    ~TranscodeDialog();
-    QStringList importList( void );
+      explicit TranscodeDialog(QWidget *parent = 0);
+      ~TranscodeDialog();
+      QStringList importList( void );
+      //Show the dialog and immediately open the RAW file chooser (used by the "Import CR2 Photo" card)
+      void chooseAndImport( void );
 
 private slots:
     void on_pushButtonAddPics_clicked();

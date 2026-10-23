@@ -6,6 +6,11 @@
 
 QT       += core gui multimedia
 
+# AI 调色面板（E4-C）：DownloadManager 已用 QNetworkAccessManager，
+# multimedia 传递依赖 network（qt_lib_multimedia.pri: depends = core network gui），
+# 显式声明更稳，防御多媒体模块变更/Qt6 依赖链变化。
+QT       += network
+
 win32{
     greaterThan(QT_MAJOR_VERSION, 5): CONFIG   += c++17
     else: CONFIG += c++14
@@ -21,6 +26,11 @@ win32: TARGET = "MLVApp"
 linux-g++*: TARGET = "mlvapp"
 osx: TARGET = "MLV App"
 TEMPLATE = app
+
+##############
+# Translations (added for zh_CN localization)
+##############
+TRANSLATIONS += mlvapp_zh_CN.ts
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked as deprecated (the exact warnings
@@ -240,6 +250,10 @@ SOURCES += \
     ../../src/processing/tinyexpr/tinyexpr.c \
     FocusPixelMapManager.cpp \
     DownloadManager.cpp \
+    AiGradingDialog.cpp \
+    LlmSettingsDialog.cpp \
+    ImageExportDialog.cpp \
+    GuidedTourOverlay.cpp \
     StatusFpmDialog.cpp \
     ../../src/librtprocess/src/demosaic/ahd.cc \
     ../../src/librtprocess/src/demosaic/amaze.cc \
@@ -411,6 +425,10 @@ HEADERS += MainWindow.h \
     BadPixelFileHandler.h \
     ../../src/processing/tinyexpr/tinyexpr.h \
     DownloadManager.h \
+    AiGradingDialog.h \
+    LlmSettingsDialog.h \
+    ImageExportDialog.h \
+    GuidedTourOverlay.h \
     FocusPixelMapManager.h \
     StatusFpmDialog.h \
     ../../src/librtprocess/src/include/array2D.h \
@@ -469,11 +487,15 @@ FORMS += \
     OverwriteListDialog.ui \
     PixelMapListDialog.ui \
     TranscodeDialog.ui \
-    StatusFpmDialog.ui
+    StatusFpmDialog.ui \
+    AiGradingDialog.ui \
+    LlmSettingsDialog.ui \
+    ImageExportDialog.ui
 
 RESOURCES += \
     ressources.qrc \
-    darkstyle.qrc
+    darkstyle.qrc \
+    i18n.qrc
 
 DISTFILES += \
     Info.plist \

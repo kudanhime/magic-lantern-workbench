@@ -49,6 +49,36 @@ public:
 
     void setPreview( QIcon preview ) {
         m_preview = preview;
+        rebuildPreviewBadge();
+    }
+
+    //素材来源类型：image = 由 CR2/DNG 照片转码而来，video = 原生 MLV 视频
+    QString getSourceType() const {
+        return m_sourceType;
+    }
+
+    void setSourceType( QString t ) {
+        if( m_sourceType == t ) return;
+        m_sourceType = t;
+        rebuildPreviewBadge();
+    }
+
+    bool isImageClip() const {
+        return m_sourceType == QString( "image" );
+    }
+
+    //0~5 星评分，0 = 未评分
+    int getRating() const {
+        return m_rating;
+    }
+
+    void setRating( int r ) {
+        m_rating = qBound( 0, r, 5 );
+    }
+
+    //缩略图（底部带「图片 / 视频」角标），供素材池显示
+    QIcon getPreviewBadged() const {
+        return m_previewBadged.isNull() ? m_preview : m_previewBadged;
     }
 
     ReceiptSettings* getReceipt() const {
@@ -77,8 +107,13 @@ private:
     QString m_bitDepth;
     QString m_dateTime;
     QString m_audio;
+    void rebuildPreviewBadge( void );
+
     QColor m_backgroundColor;
     QIcon m_preview;
+    QIcon m_previewBadged;
+    QString m_sourceType;
+    int m_rating;
     ReceiptSettings *m_pReceipt;
 };
 

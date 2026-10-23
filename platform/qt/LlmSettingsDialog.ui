@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LlmSettingsDialog</class>
+ <widget class="QDialog" name="LlmSettingsDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>440</width>
+    <height>250</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>LLM 设置</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayoutMain">
+   <item>
+    <widget class="QLabel" name="labelHint">
+     <property name="text">
+      <string>AI 智能调色使用的语言模型通道（改完点「确定」保存）</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <property name="fieldGrowthPolicy">
+      <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+     </property>
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelEndpoint">
+       <property name="text">
+        <string>端点:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="lineEditEndpoint">
+        <property name="placeholderText">
+         <string>https://api.deepseek.com/v1</string>
+        </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="labelModel">
+       <property name="text">
+        <string>模型:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="lineEditModel">
+       <property name="text">
+        <string>deepseek-v4-flash</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelApiKey">
+       <property name="text">
+        <string>API 密钥:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="lineEditApiKey">
+       <property name="echoMode">
+        <enum>QLineEdit::Password</enum>
+       </property>
+       <property name="placeholderText">
+        <string>本地免费桥留空即可</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="labelTimeout">
+       <property name="text">
+        <string>超时:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QSpinBox" name="spinBoxTimeout">
+       <property name="suffix">
+        <string> 秒</string>
+       </property>
+       <property name="minimum">
+        <number>30</number>
+       </property>
+       <property name="maximum">
+        <number>600</number>
+       </property>
+       <property name="value">
+        <number>120</number>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="labelMaxTokens">
+       <property name="text">
+        <string>输出上限:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QSpinBox" name="spinBoxMaxTokens">
+       <property name="suffix">
+        <string> token</string>
+       </property>
+       <property name="minimum">
+        <number>500</number>
+       </property>
+       <property name="maximum">
+        <number>32768</number>
+       </property>
+       <property name="singleStep">
+        <number>500</number>
+       </property>
+       <property name="value">
+        <number>4000</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

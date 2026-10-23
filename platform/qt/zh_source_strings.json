@@ -1,0 +1,327 @@
+[
+ {
+  "file": "MainWindow.cpp",
+  "line": 7358,
+  "text": "选中里有 %1 张照片、%2 个视频。\\n\\n要导出哪一类？"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7361,
+  "text": "导出照片"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7362,
+  "text": "导出视频"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7376,
+  "text": "请先选中一个素材。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7608,
+  "text": "请先导入并选中一个素材。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7649,
+  "text": "选择导出目录"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7700,
+  "text": "预览 %1"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7701,
+  "text": "缩略图宽度 %1 px"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7947,
+  "text": "DNG 需要从原始 RAW 帧生成，当前素材没有可用的 RAW 数据。\\n请改用 JPG/PNG/TIFF 导出。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7966,
+  "text": "导出完成。\\n%1"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7968,
+  "text": "当前素材没有可导出的帧。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7977,
+  "text": "内存不足，无法导出。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 7988,
+  "text": "帧解码失败。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8007,
+  "text": "导出完成（DNG 原始 RAW，双感光度已合并）。\\n%1\\n\\n注：DNG 保存原始数据，不含曝光/白平衡等调色；色彩请在 LR/达芬奇中继续调整。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8009,
+  "text": "DNG 导出失败：%1"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8043,
+  "text": "\\n\\n（注：原始 EXIF 未能写入——请确认同目录或 I:/AI_Tools/cr2hdr 下有 exiftool.exe）"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8047,
+  "text": "导出完成。\\n%1%2"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8049,
+  "text": "导出失败：%1"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8057,
+  "text": "请先导入素材。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8086,
+  "text": "选中的素材里没有照片。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8117,
+  "text": "选择导出图片的文件夹"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8132,
+  "text": "正在导出图片..."
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8132,
+  "text": "取消"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8133,
+  "text": "导出图片"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8143,
+  "text": "导出 %1 / %2：%3"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8243,
+  "text": "导出完成：成功 %1 张，失败 %2 张。\\n输出目录：%3"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8254,
+  "text": "请先导入素材。"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8284,
+  "text": "选中的素材里没有照片。\\n（照片指由 CR2/DNG 导入的素材；视频请用「导出当前帧」。）"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8289,
+  "text": "选择导出图片的文件夹"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8296,
+  "text": "正在导出图片..."
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8296,
+  "text": "取消"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8297,
+  "text": "批量导出图片"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8308,
+  "text": "导出 %1 / %2：%3"
+ },
+ {
+  "file": "MainWindow.cpp",
+  "line": 8353,
+  "text": "批量导出完成：成功 %1 张，失败 %2 张。\\n输出目录：%3"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 88,
+  "text": "欢迎使用 MLVApp 中文版"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 89,
+  "text": "欢迎使用 MLVApp 中文版！本导览将带你快速了解核心功能。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 92,
+  "text": "导入气泡"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 93,
+  "text": "材料池顶部有两个导入气泡：「视频」导入 MLV，「照片」导入 CR2/DNG 等 RAW。也可以直接拖放素材进来。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 97,
+  "text": "预览大小与筛选"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 98,
+  "text": "材料池顶部的滑块可以调缩略图大小（右侧是数值）；下方下拉框可按类型筛选（全部/只看图片/只看视频）。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 102,
+  "text": "预览区"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 103,
+  "text": "中间是预览区：滚轮缩放、拖拽平移；Ctrl+0 适应窗口，Ctrl+1 查看 1:1 细节。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 106,
+  "text": "编辑面板"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 107,
+  "text": "右侧是编辑面板，包含 RAW 校正、基本调色、AI 智能调色等分区，可折叠展开。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 110,
+  "text": "Dual ISO 面板"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 111,
+  "text": "本区内的 Dual ISO 面板用于双感光度素材合并。注意：必须勾选「强制」并选「直方图」匹配曝光，选错会静默出坏图。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 114,
+  "text": "AI 面板入口"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 115,
+  "text": "按 Ctrl+Alt+G，或从「编辑 → AI 智能调色」打开 AI 调色面板。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 118,
+  "text": "AI 指令框"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 119,
+  "text": "在指令框用自然语言描述需求，例如：整体偏暗，稍微提亮一点，色温暖一些，做成柔和日光的感觉。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 122,
+  "text": "生成调色"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 123,
+  "text": "点「生成调色」(Generate)，AI 会在 1-2 秒内返回参数并自动填入结果表。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 126,
+  "text": "应用"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 127,
+  "text": "确认参数无误后点「应用」(Apply)，一键套用到画面。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 130,
+  "text": "导出图片 / 导出帧"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 131,
+  "text": "导出就在上方工具栏：照片素材用「批量导出图片」一键出图（可多选）；视频素材用「导出当前帧」导出当前画面。"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 136,
+  "text": "导览结束"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 137,
+  "text": "导览结束！随时可从「帮助 → 功能导览」重新查看。祝创作愉快！"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 198,
+  "text": "跳过导览"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 202,
+  "text": "上一步"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 206,
+  "text": "下一步"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 211,
+  "text": "完成"
+ },
+ {
+  "file": "GuidedTourOverlay.cpp",
+  "line": 276,
+  "text": "第 %1 步 / 共 %2 步"
+ },
+ {
+  "file": "ImageExportDialog.cpp",
+  "line": 149,
+  "text": "未找到源素材目录"
+ },
+ {
+  "file": "ImageExportDialog.cpp",
+  "line": 282,
+  "text": "选择导出目录"
+ }
+]

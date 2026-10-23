@@ -49,7 +49,7 @@ void StatusDialog::drawTimeFromToDoFrames(uint32_t frames)
     duration /= 60;
     int hours = (int) (duration);
 
-    ui->labelEstimatedTime->setText( QString( "ETA: %1h%2m%3s" )
+    ui->labelEstimatedTime->setText( tr( "ETA: %1h%2m%3s" )
             .arg( hours, 2, 10, QChar('0') )
             .arg( minutes, 2, 10, QChar('0') )
             .arg( seconds, 2, 10, QChar('0') ) );

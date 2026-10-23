@@ -15,6 +15,7 @@
 #include <QDebug>
 #include <QStandardPaths>
 #include "avir/avirthreadpool.h"
+#include "DngPreview.h"
 
 //Constructor
 SingleFrameExportDialog::SingleFrameExportDialog(QWidget *parent,
@@ -210,16 +211,44 @@ void SingleFrameExportDialog::exportDng()
     //Init DNG data struct
     dngObject_t * cinemaDng = initDngObject( m_pMlvObject, ui->comboBoxCodec->currentIndex(), 1, picAR ); // 2nd param: 0 = uncompresed, 1 = lossless
 
-    //Save cDNG frame
+    //Embed a JPEG preview (thumbnail) into the DNG, so file managers / Lightroom /
+    //Resolve can show the frame without demosaicing the raw: 1024 px long edge,
+    //built from the same processed frame the JPG channel writes and encoded by
+    //Qt's JPG plugin (zero new dependencies - see DngPreview.h).
+    //The export runs in two phases: the raw frame is read and processed first, the
+    //preview is rendered afterwards, because rendering writes back state into the
+    //clip's raw processing object which would otherwise change the exported raw.
+    int previewWidth = 0;
+    int previewHeight = 0;
+    dngPreviewDimensions( m_pMlvObject, previewWidth, previewHeight );
+    dngPlanPreview( cinemaDng, previewWidth, previewHeight );
+
+    QString properties_fn = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    properties_fn.append("/mlv-dng-params.txt");
+
 #ifdef Q_OS_UNIX
-    QString properties_fn = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    properties_fn.append("/mlv-dng-params.txt");
-    if( saveDngFrame( m_pMlvObject, cinemaDng, m_frameNr, fileName.toUtf8().data(), properties_fn.toUtf8().data() ) )
+    QByteArray nameNative = fileName.toUtf8();
 #else
-    QString properties_fn = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    properties_fn.append("/mlv-dng-params.txt");
-    if( saveDngFrame( m_pMlvObject, cinemaDng, m_frameNr, fileName.toLatin1().data(), properties_fn.toLatin1().data() ) )
+    QByteArray nameNative = fileName.toLatin1();
 #endif
+    int prepare_rc = dngPrepareFrame( m_pMlvObject, cinemaDng, m_frameNr, properties_fn.toLatin1().data() );
+
+    //Now render + encode the preview - safe, the DNG raw data is already final
+    QByteArray previewJpeg;
+    int previewW = 0;
+    int previewH = 0;
+    if( prepare_rc == 0 && dngMakeJpegPreview( m_pMlvObject, m_frameNr, previewJpeg, previewW, previewH ) )
+        qDebug() << "DNG export: embedding" << previewW << "x" << previewH << "JPEG preview," << previewJpeg.size() << "bytes";
+    else
+    {
+        previewJpeg.clear();
+        qDebug() << "DNG export: no preview could be generated, writing DNG without preview";
+    }
+
+    if( prepare_rc != 0
+            || dngWriteFrame( cinemaDng, ( char* )nameNative.data(),
+                              previewJpeg.isEmpty() ? NULL : ( const uint8_t* )previewJpeg.constData(),
+                              previewJpeg.isEmpty() ? 0 : ( size_t )previewJpeg.size() ) )
     {
         QMessageBox::critical( this, tr( "MLV App - Export file error" ), tr( "Could not save: %1\n" ).arg( fileName ), QMessageBox::Cancel, QMessageBox::Cancel );
     }

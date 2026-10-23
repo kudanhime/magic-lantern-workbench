@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="mlvapp_zh_CN.qm">mlvapp_zh_CN.qm</file>
+        <file alias="qt_zh_CN.qm">qt_zh_CN.qm</file>
+    </qresource>
+</RCC>

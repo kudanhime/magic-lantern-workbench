@@ -125,7 +125,7 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>File</string>
+     <string>&amp;File</string>
     </property>
     <addaction name="actionNewSession"/>
     <addaction name="actionOpenSession"/>
@@ -155,7 +155,7 @@
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
-     <string>Edit</string>
+     <string>&amp;Edit</string>
     </property>
     <addaction name="actionCopyRecept"/>
     <addaction name="actionPasteReceipt"/>
@@ -175,9 +175,24 @@
     <addaction name="actionMarkGreen"/>
     <addaction name="actionUnmark"/>
    </widget>
+   <widget class="QMenu" name="menuAiGrading">
+    <property name="title">
+     <string>AI Grading(&amp;G)</string>
+    </property>
+    <addaction name="actionAiGrading"/>
+    <addaction name="separator"/>
+    <addaction name="actionAiLlmSettings"/>
+   </widget>
+   <widget class="QMenu" name="menuLanguage">
+    <property name="title">
+     <string>Language</string>
+    </property>
+    <addaction name="actionLanguageZh"/>
+    <addaction name="actionLanguageEn"/>
+   </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
-     <string>Help</string>
+     <string>&amp;Help</string>
     </property>
     <addaction name="actionAbout"/>
     <addaction name="actionAboutQt"/>
@@ -186,14 +201,15 @@
     <addaction name="actionAutoCheckForUpdates"/>
     <addaction name="separator"/>
     <addaction name="actionHelp"/>
+    <addaction name="actionTour"/>
    </widget>
    <widget class="QMenu" name="menuPlayback">
     <property name="title">
-     <string>Playback</string>
+     <string>&amp;Playback</string>
     </property>
     <widget class="QMenu" name="menuDemosaicForPlayback">
      <property name="title">
-      <string>Debayer for Playback</string>
+      <string>Play Debayered</string>
      </property>
      <addaction name="actionUseNoneDebayer"/>
      <addaction name="actionUseSimpleDebayer"/>
@@ -230,11 +246,11 @@
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
-     <string>View</string>
+     <string>&amp;View</string>
     </property>
     <widget class="QMenu" name="menuSessionListPreview">
      <property name="title">
-      <string>Session List Preview</string>
+      <string>Clip List Preview</string>
      </property>
      <addaction name="actionPreviewDisabled"/>
      <addaction name="actionPreviewList"/>
@@ -285,16 +301,18 @@
    </widget>
    <widget class="QMenu" name="menuWindow">
     <property name="title">
-     <string>Window</string>
+     <string>&amp;Window</string>
     </property>
     <addaction name="actionMinimize"/>
     <addaction name="actionMaximize"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
+   <addaction name="menuAiGrading"/>
    <addaction name="menuPlayback"/>
    <addaction name="menuView"/>
    <addaction name="menuWindow"/>
+   <addaction name="menuLanguage"/>
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QToolBar" name="mainToolBar">
@@ -318,6 +336,7 @@
    <addaction name="actionSaveSession"/>
    <addaction name="actionOpen"/>
    <addaction name="actionExport"/>
+   <addaction name="actionExportCurrentFrame"/>
    <addaction name="actionExportSettings"/>
    <addaction name="actionCopyRecept"/>
    <addaction name="actionPasteReceipt"/>
@@ -486,7 +505,8 @@ QGroupBox::indicator:checked:disabled {
            <property name="bottomMargin">
             <number>5</number>
            </property>
-           <item>
+           
+<item>
             <widget class="QGroupBox" name="groupBoxRawCorrection">
              <property name="title">
               <string>RAW Correction</string>
@@ -5153,6 +5173,78 @@ QGroupBox::indicator:checked:disabled {
                    <property name="text">
                     <string>AgX</string>
                    </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+<item>
+            <widget class="QGroupBox" name="groupBoxAiGrading">
+             <property name="visible">
+              <bool>false</bool>
+             </property>
+             <property name="title">
+              <string>AI Grading</string>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="checked">
+              <bool>false</bool>
+             </property>
+             <layout class="QGridLayout" name="gridLayoutAiGrading">
+              <property name="leftMargin">
+               <number>5</number>
+              </property>
+              <property name="topMargin">
+               <number>5</number>
+              </property>
+              <property name="rightMargin">
+               <number>5</number>
+              </property>
+              <property name="bottomMargin">
+               <number>5</number>
+              </property>
+              <item row="0" column="0">
+               <widget class="QFrame" name="frameAiGrading">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayoutAiGradingFrame">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <item>
+                  <widget class="QWidget" name="widgetAiGradingHost" native="true">
+                   <layout class="QVBoxLayout" name="verticalLayoutAiGradingHost">
+                    <property name="spacing">
+                     <number>0</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                   </layout>
                   </widget>
                  </item>
                 </layout>
@@ -10049,6 +10141,181 @@ QGroupBox::indicator:checked:disabled {
       <number>0</number>
      </property>
      <item>
+      <widget class="QWidget" name="widgetSessionControls" native="true">
+       <layout class="QVBoxLayout" name="verticalLayoutSessionCtrl">
+        <property name="spacing">
+         <number>4</number>
+        </property>
+        <property name="leftMargin">
+         <number>4</number>
+        </property>
+        <property name="topMargin">
+         <number>4</number>
+        </property>
+        <property name="rightMargin">
+         <number>4</number>
+        </property>
+        <property name="bottomMargin">
+         <number>4</number>
+        </property>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayoutImportBubbles">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QToolButton" name="toolButtonBubbleVideo">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+              <horstretch>1</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>46</height>
+             </size>
+            </property>
+            <property name="toolTip">
+             <string>Import MLV video files into the current media pool</string>
+            </property>
+            <property name="text">
+             <string>Video</string>
+            </property>
+            <property name="icon">
+             <iconset resource="ressources.qrc">
+              <normaloff>:/RetinaIMG/RetinaIMG/Movie-icon.png</normaloff>
+             </iconset>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>22</width>
+              <height>22</height>
+             </size>
+            </property>
+            <property name="toolButtonStyle">
+             <enum>Qt::ToolButtonTextBesideIcon</enum>
+            </property>
+            <property name="autoRaise">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QToolButton" name="toolButtonBubblePhoto">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+              <horstretch>1</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>46</height>
+             </size>
+            </property>
+            <property name="toolTip">
+             <string>Import CR2 and other RAW photos into the current media pool</string>
+            </property>
+            <property name="text">
+             <string>Photo</string>
+            </property>
+            <property name="icon">
+             <iconset resource="ressources.qrc">
+              <normaloff>:/RetinaIMG/RetinaIMG/Image-icon.png</normaloff>
+             </iconset>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>22</width>
+              <height>22</height>
+             </size>
+            </property>
+            <property name="toolButtonStyle">
+             <enum>Qt::ToolButtonTextBesideIcon</enum>
+            </property>
+            <property name="autoRaise">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="NoScrollComboBox" name="comboBoxTypeFilter">
+          <property name="toolTip">
+           <string>Filter the media pool by clip type</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>All clips</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Photos only</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Videos only</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <widget class="QWidget" name="widgetPreviewSize" native="true">
+          <layout class="QHBoxLayout" name="horizontalLayoutPreviewSize">
+           <property name="spacing">
+            <number>4</number>
+           </property>
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="labelPreviewSize">
+             <property name="text">
+              <string>Preview</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="NoScrollSlider" name="horizontalSliderPreviewSize">
+             <property name="minimum">
+              <number>80</number>
+             </property>
+             <property name="maximum">
+              <number>260</number>
+             </property>
+             <property name="value">
+              <number>130</number>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="toolTip">
+              <string>Preview size (thumbnail width)</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
       <widget class="QListView" name="listViewSession">
        <property name="contextMenuPolicy">
         <enum>Qt::CustomContextMenu</enum>
@@ -10107,7 +10374,8 @@ QGroupBox::indicator:checked:disabled {
     </layout>
    </widget>
   </widget>
-  <action name="actionOpen">
+    
+    <action name="actionOpen">
    <property name="icon">
     <iconset resource="ressources.qrc">
      <normaloff>:/RetinaIMG/RetinaIMG/Movie-icon.png</normaloff>
@@ -10129,7 +10397,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/File-Copy-icon.png</normaloff>:/RetinaIMG/RetinaIMG/File-Copy-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Copy Receipt</string>
+    <string>Copy grading parameters</string>
    </property>
    <property name="toolTip">
     <string>Copy the receipt to clipboard</string>
@@ -10144,7 +10412,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Paste-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Paste-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Paste Receipt</string>
+    <string>Paste grading parameters</string>
    </property>
    <property name="toolTip">
     <string>Paste the receipt from clipboard</string>
@@ -10161,6 +10429,28 @@ QGroupBox::indicator:checked:disabled {
     <string>Ctrl+Q</string>
    </property>
   </action>
+  <action name="actionLanguageZh">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+Z</string>
+   </property>
+   <property name="text">
+    <string>Chinese</string>
+   </property>
+  </action>
+  <action name="actionLanguageEn">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+E</string>
+   </property>
+   <property name="text">
+    <string>English</string>
+   </property>
+  </action>
   <action name="actionAbout">
    <property name="text">
     <string>About...</string>
@@ -10172,7 +10462,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Export-To-File-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Export-To-File-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Export Selected Clips</string>
+    <string>Export selected clip</string>
    </property>
    <property name="toolTip">
     <string>Export selected clips</string>
@@ -10187,7 +10477,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/IMG/IMG/information-icon.png</normaloff>:/IMG/IMG/information-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Clip Information</string>
+    <string>Clip information</string>
    </property>
    <property name="toolTip">
     <string>Show clip information...</string>
@@ -10220,7 +10510,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/AudioVideoIcons/AudioVideoIcons/FirstFrame.png</normaloff>:/AudioVideoIcons/AudioVideoIcons/FirstFrame.png</iconset>
    </property>
    <property name="text">
-    <string>Goto First Frame</string>
+    <string>Go to first frame</string>
    </property>
    <property name="toolTip">
     <string>Jump to first frame...</string>
@@ -10238,7 +10528,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/AudioVideoIcons/AudioVideoIcons/Loop.png</normaloff>:/AudioVideoIcons/AudioVideoIcons/Loop.png</iconset>
    </property>
    <property name="text">
-    <string>Loop</string>
+    <string>Loop playback</string>
    </property>
    <property name="toolTip">
     <string>Never ending playback</string>
@@ -10318,7 +10608,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Settings-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Settings-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Export Settings</string>
+    <string>Export settings</string>
    </property>
    <property name="toolTip">
     <string>Export Settings</string>
@@ -10364,6 +10654,28 @@ QGroupBox::indicator:checked:disabled {
     <string>Ctrl+Alt+R</string>
    </property>
   </action>
+  <action name="actionAiGrading">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Open AI grading</string>
+   </property>
+   <property name="toolTip">
+    <string>Grade the clip with natural language via an LLM</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+G</string>
+   </property>
+  </action>
+  <action name="actionAiLlmSettings">
+   <property name="text">
+    <string>LLM settings...</string>
+   </property>
+   <property name="toolTip">
+    <string>Configure the endpoint / model / API key / timeout / output limit used by AI grading</string>
+   </property>
+  </action>
   <action name="actionNewSession">
    <property name="enabled">
     <bool>true</bool>
@@ -10373,7 +10685,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/File-New-icon.png</normaloff>:/RetinaIMG/RetinaIMG/File-New-icon.png</iconset>
    </property>
    <property name="text">
-    <string>New Session</string>
+    <string>New session</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+N</string>
@@ -10388,7 +10700,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Folder-Open-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Folder-Open-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Open Session</string>
+    <string>Open session</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+O</string>
@@ -10403,7 +10715,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Save-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Save-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Save Session</string>
+    <string>Save session</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+S</string>
@@ -10497,7 +10809,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/AudioVideoIcons/AudioVideoIcons/FrameFW.png</normaloff>:/AudioVideoIcons/AudioVideoIcons/FrameFW.png</iconset>
    </property>
    <property name="text">
-    <string>Next Frame</string>
+    <string>Next frame</string>
    </property>
    <property name="shortcut">
     <string>.</string>
@@ -10509,7 +10821,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/AudioVideoIcons/AudioVideoIcons/FrameBW.png</normaloff>:/AudioVideoIcons/AudioVideoIcons/FrameBW.png</iconset>
    </property>
    <property name="text">
-    <string>Previous Frame</string>
+    <string>Previous frame</string>
    </property>
    <property name="shortcut">
     <string>,</string>
@@ -10547,7 +10859,7 @@ QGroupBox::indicator:checked:disabled {
      <normaloff>:/RetinaIMG/RetinaIMG/Export-Image-icon.png</normaloff>:/RetinaIMG/RetinaIMG/Export-Image-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Export Current Frame</string>
+    <string>Export current frame</string>
    </property>
    <property name="toolTip">
     <string>Export current frame...</string>
@@ -10561,13 +10873,21 @@ QGroupBox::indicator:checked:disabled {
     <string>About Qt</string>
    </property>
   </action>
+  <action name="actionBatchExportImages">
+   <property name="text">
+    <string>Batch export images</string>
+   </property>
+   <property name="toolTip">
+    <string>Batch export the selected clips as image sequences (multi-select allowed)</string>
+   </property>
+  </action>
   <action name="actionExportReceipt">
    <property name="icon">
     <iconset resource="ressources.qrc">
      <normaloff>:/RetinaIMG/RetinaIMG/ExportReceipt-icon.png</normaloff>:/RetinaIMG/RetinaIMG/ExportReceipt-icon.png</iconset>
    </property>
    <property name="text">
-    <string>Export Receipt</string>
+    <string>Export grading parameters</string>
    </property>
    <property name="toolTip">
     <string>Export Receipt to File</string>
@@ -10789,6 +11109,14 @@ QGroupBox::indicator:checked:disabled {
   <action name="actionHelp">
    <property name="text">
     <string>Help</string>
+   </property>
+  </action>
+  <action name="actionTour">
+   <property name="text">
+    <string>Feature tour</string>
+   </property>
+   <property name="toolTip">
+    <string>Walk through Magic Lantern Workbench's core features step by step</string>
    </property>
   </action>
   <action name="actionFcpxmlSelectionAssistant">
@@ -11988,9 +12316,43 @@ QGroupBox::indicator:checked:disabled {
     </hint>
    </hints>
   </connection>
- </connections>
- <slots>
-  <slot>toolButtonFocusPixelsChanged()</slot>
+ <connection>
+    <sender>toolButtonCardMlv</sender>
+    <signal>clicked()</signal>
+    <receiver>MainWindow</receiver>
+    <slot>on_cardMlvVideo_clicked()</slot>
+    <hints>
+     <hint type="sourcelabel">
+      <x>75</x>
+      <y>100</y>
+     </hint>
+     <hint type="destinationlabel">
+      <x>599</x>
+      <y>349</y>
+     </hint>
+    </hints>
+   </connection>
+   <connection>
+    <sender>toolButtonCardRaw</sender>
+    <signal>clicked()</signal>
+    <receiver>MainWindow</receiver>
+    <slot>on_cardCr2Photo_clicked()</slot>
+    <hints>
+     <hint type="sourcelabel">
+      <x>75</x>
+      <y>200</y>
+     </hint>
+     <hint type="destinationlabel">
+      <x>599</x>
+      <y>349</y>
+     </hint>
+    </hints>
+   </connection>
+  </connections>
+  <slots>
+   <slot>on_cardMlvVideo_clicked()</slot>
+   <slot>on_cardCr2Photo_clicked()</slot>
+   <slot>toolButtonFocusPixelsChanged()</slot>
   <slot>toolButtonFocusPixelsIntMethodChanged()</slot>
   <slot>toolButtonBadPixelsChanged()</slot>
   <slot>toolButtonBadPixelsIntMethodChanged()</slot>

@@ -6,12 +6,30 @@
  */
 
 #include "MainWindow.h"
-#include "ui_MainWindow.h"
+#include "LlmSettingsDialog.h"
+#include "ImageExportDialog.h"
+#include <QApplication>
+  #include "ui_MainWindow.h"
 #include "math.h"
 
 #include <QMessageBox>
+#include <QProgressDialog>
+#include <QPushButton>
+#include <QPainter>
+#include <QColorSpace>
+
+// 前向声明：图片导出统一保存（实现在文件后段，CLI 段需要先声明）
+static bool saveImageWithSettings( QImage img, const QString &outPath,
+                                   int fmt, int quality, int scalePct, int customW,
+                                   bool wmEnabled, const QString &wmText,
+                                   int wmSize, int wmOpacity, int wmCorner,
+                                   int colorSpace );
+#include <QFile>
+#include <QProcess>
+#include <QFontMetrics>
 #include <QThread>
 #include <QTime>
+#include <QTimer>
 #include <QSettings>
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QDesktopWidget>
@@ -49,6 +67,7 @@
 #include "UserManualDialog.h"
 #include "StretchFactors.h"
 #include "SingleFrameExportDialog.h"
+#include "DngPreview.h"
 #include "FpmInstaller.h"
 #include "ScopesLabel.h"
 #include "avir/avirthreadpool.h"
@@ -60,6 +79,7 @@
 #include "FocusPixelMapManager.h"
 #include "StatusFpmDialog.h"
 #include "RenameDialog.h"
+#include "GuidedTourOverlay.h"
 
 /* spaceTag argument options: ffmpeg color space tag number compliant */
 #define SPACETAG_REC709   1   /* rec709 color space */
@@ -76,7 +96,123 @@ extern const char* camidGetCameraName(uint32_t cameraModel, int camname_type);
 }
 #endif
 
-#define APPNAME "MLV App"
+//★ 窗口/对话框标题名：按 exe 文件名切中英文
+//界面语言：菜单里选过就以 QSettings 为准，否则按 exe 文件名（中文版=魔灯工作台）
+static bool uiIsChinese()
+{
+    QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+    const QString pref = set.value( QStringLiteral( "language" ), QString() ).toString();
+    if( pref == QLatin1String( "zh" ) ) return true;
+    if( pref == QLatin1String( "en" ) ) return false;
+    const QString base = QFileInfo( QCoreApplication::applicationFilePath() ).completeBaseName();
+    return base.contains( QStringLiteral( "\u9b54\u706f" ) );
+}
+
+//Qt 对整个程序做 retranslateUi 不可靠（大量手写 setText 收不到），
+//所以语言切换采用「写偏好 + 自动重启」，重启后由 main() 按偏好加载译文。
+extern bool applyAppTranslator( bool zh );    // 定义在 main.cpp
+static QString appDisplayName();    // 定义在文件后部，这里先声明
+
+
+// 即时切换界面语言：装/摘译文 + 广播 LanguageChange + 重刷标题。
+// 不退出进程 —— 素材、调色参数、当前帧全部保留。
+void MainWindow::applyLanguageNow( const QString &lang )
+{
+    QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+    set.setValue( QStringLiteral( "language" ), lang );
+    set.sync();
+
+    applyAppTranslator( lang == QLatin1String( "zh" ) );
+
+    // removeTranslator 不保证发 LanguageChange，这里对全部顶层窗口手动广播一次
+    const QWidgetList tops = QApplication::topLevelWidgets();
+    for( QWidget *w : tops )
+    {
+        QEvent ev( QEvent::LanguageChange );
+        QApplication::sendEvent( w, &ev );
+    }
+
+    setWindowTitle( appDisplayName() );   // 标题跟着语言走
+    qDebug() << "[LANG] switched to" << lang;
+}
+
+// 手写 setText 的集中补刷：只处理「常驻可见且语言敏感」的部分。
+// 临时消息框/进度框/请求状态不用管 —— 下次操作会自然用新语言重设。
+void MainWindow::retranslateDynamic( void )
+{
+    // 1) 菜单项（平台文案不同）
+#ifdef Q_OS_WIN
+    ui->actionShowInFinder->setText( tr( "Reveal in Explorer" ) );
+    ui->actionShowInFinder->setToolTip( tr( "Reveal selected file in Explorer" ) );
+#endif
+#ifdef Q_OS_LINUX
+    ui->actionShowInFinder->setText( tr( "Reveal in file browser" ) );
+    ui->actionShowInFinder->setToolTip( tr( "Reveal selected file in file browser" ) );
+#endif
+
+    // 2) 分辨率标签：没素材时显示占位
+    if( !m_fileLoaded )
+        ui->label_resResolution->setText( tr( "0 x 0 pixels" ) );
+
+    // 3) 预览大小标签（读当前滑块值）
+    if( m_pPreviewSizeLabel )
+        m_pPreviewSizeLabel->setText( tr( "Preview %1" ).arg( ui->horizontalSliderPreviewSize->value() ) );
+
+    // 4) Dual ISO 主按钮：按当前是否强制决定文案
+    if( m_pMlvObject && m_pModel && m_pModel->rowCount( QModelIndex() ) > 0 )
+    {
+        ReceiptSettings *r = m_pModel->receipt( m_pModel->activeRow() );
+        if( r )
+            ui->toolButtonDualIsoOn->setText( r->dualIsoForced() == DISO_FORCED ? tr( "Force On" ) : tr( "On" ) );
+    }
+
+    // 5) 暗帧文件提示（只在显示占位时刷）
+    {
+        const QString t = ui->lineEditDarkFrameFile->text();
+        if( t.isEmpty() || t == QLatin1String( "No file selected" ) || t == QStringLiteral( "\u672a\u9009\u62e9\u6587\u4ef6" ) )
+            ui->lineEditDarkFrameFile->setText( tr( "No file selected" ) );
+    }
+}
+
+void MainWindow::changeEvent( QEvent *event )
+{
+    if( event->type() == QEvent::LanguageChange )
+    {
+        ui->retranslateUi( this );   // .ui 里的几千个控件一次全刷
+        setWindowTitle( appDisplayName() );   // retranslateUi 会把标题改回 .ui 写死的 "MLV App"，这里纠正
+        retranslateDynamic();        // 手写 setText 的集中补刷
+    }
+    QMainWindow::changeEvent( event );
+}
+
+void MainWindow::on_actionLanguageZh_triggered()
+{
+    applyLanguageNow( QStringLiteral( "zh" ) );
+    ui->actionLanguageZh->setChecked( true );
+    ui->actionLanguageEn->setChecked( false );
+}
+
+void MainWindow::on_actionLanguageEn_triggered()
+{
+    applyLanguageNow( QStringLiteral( "en" ) );
+    ui->actionLanguageZh->setChecked( false );
+    ui->actionLanguageEn->setChecked( true );
+}
+
+static QString appDisplayName()
+{
+    static QString cached;
+    static int cachedZh = -1;              // -1 = 还没算过
+    const bool zh = uiIsChinese();
+    if( cachedZh != int( zh ) )            // 语言变了就刷新缓存
+    {
+        cached = zh ? QStringLiteral( "\u9b54\u706f\u5de5\u4f5c\u53f0" )        //魔灯工作台
+                   : QStringLiteral( "Magic Lantern Workbench" );
+        cachedZh = int( zh );
+    }
+    return cached;
+}
+#define APPNAME appDisplayName()
 #define VERSION QString("%1.%2").arg(VERSION_MAJOR).arg(VERSION_MINOR)
 #define GITVERSION QString("QTv%1.%2").arg(VERSION_MAJOR).arg(VERSION_MINOR)
 
@@ -94,13 +230,16 @@ extern const char* camidGetCameraName(uint32_t cameraModel, int camname_type);
 #define SET_ACTIVE_CLIP_IDX(index)   m_pModel->setActiveRow(index)
 #define SESSION_EMPTY                m_pModel->rowCount(QModelIndex())==0
 
+// 调试/自检：--tour-test=N 直接从第 N 步开始（0 或缺省=从第 1 步）
+static int g_tourStartStep = 0;
+
 //Constructor
 MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     //Change working directory for C part
-    chdir( QCoreApplication::applicationDirPath().toLatin1().data() );
+    chdir( QCoreApplication::applicationDirPath().toLocal8Bit().data() );
 
     //Enable color management for macOS
     auto format = QSurfaceFormat::defaultFormat();
@@ -109,6 +248,9 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
     QSurfaceFormat::setDefaultFormat(format);
 
     ui->setupUi(this);
+
+    //★ .ui 里写死了 "MLV App"，这里按语言模式覆盖窗口标题
+    setWindowTitle( APPNAME );
     setAcceptDrops(true);
     qApp->installEventFilter( this );
 
@@ -117,6 +259,7 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
     m_frameStillDrawing = false;
     m_frameChanged = false;
     m_fileLoaded = false;
+    m_cliShouldQuit = false;
     m_fpsOverride = false;
     m_inOpeningProcess = false;
     m_setSliders = false;
@@ -165,14 +308,207 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
     //"Open with" for Windows or scripts
     if( argc > 1 )
     {
-        QString fileName = QString( "%1" ).arg( argv[1] );
+        //E5: First pass - pull out --receipt <path> / --export <dir> options.
+        //Remaining positional args keep their existing meaning (argv[1] = file).
+        //This is purely additive: .mlv/.masxml/.command/.fpm handling is untouched.
+        QString cliReceiptPath;
+        QString cliExportDir;
+        QString cliExportJpgDir;
+        for( int i = 1; i < argc; ++i )
+        {
+            const QString a = QString::fromLocal8Bit( argv[i] );
+            if( a == QLatin1String( "--receipt" ) )
+            {
+                if( i + 1 < argc ) cliReceiptPath = QString::fromLocal8Bit( argv[i+1] );
+            }
+            else if( a == QLatin1String( "--export" ) )
+            {
+                if( i + 1 < argc ) cliExportDir = QString::fromLocal8Bit( argv[i+1] );
+            }
+            else if( a.startsWith( QLatin1String( "--receipt=" ) ) )
+            {
+                cliReceiptPath = a.mid( 10 );
+            }
+            else if( a.startsWith( QLatin1String( "--export=" ) ) )
+            {
+                cliExportDir = a.mid( 9 );
+            }
+            else if( a == QLatin1String( "--export-jpg" ) )
+            {
+                if( i + 1 < argc ) cliExportJpgDir = QString::fromLocal8Bit( argv[i+1] );
+            }
+            else if( a.startsWith( QLatin1String( "--export-jpg=" ) ) )
+            {
+                cliExportJpgDir = a.mid( 13 );
+            }
+        }
+
+        QString fileName = QString::fromLocal8Bit( argv[1] );
+
+        //照片（CR2/DNG/TIFF…）同样支持命令行打开：走 importRawFiles，标记为「图片」素材。
+        //这样双击 .CR2 关联到本程序也能正常打开。
+        const QString fnLower = fileName.toLower();
+        const bool isRawPhoto = fnLower.endsWith( ".cr2" )  || fnLower.endsWith( ".cr3" )
+                             || fnLower.endsWith( ".crf" )  || fnLower.endsWith( ".dng" )
+                             || fnLower.endsWith( ".nef" )  || fnLower.endsWith( ".arw" )
+                             || fnLower.endsWith( ".raf" )  || fnLower.endsWith( ".rw2" )
+                             || fnLower.endsWith( ".orf" )  || fnLower.endsWith( ".pef" )
+                             || fnLower.endsWith( ".sr2" )  || fnLower.endsWith( ".srf" )
+                             || fnLower.endsWith( ".tif" )  || fnLower.endsWith( ".tiff" );
 
         //Exit if not an MLV file or aborted
-        if( QFile(fileName).exists() && fileName.endsWith( ".mlv", Qt::CaseInsensitive ) )
+        if( QFile(fileName).exists() && ( fileName.endsWith( ".mlv", Qt::CaseInsensitive ) || isRawPhoto ) )
         {
-            importNewMlv( fileName );
+            if( isRawPhoto )
+                importRawFiles( QStringList() << fileName );    //照片 -> sourceType = image
+            else
+                importNewMlv( fileName );                       //视频 -> sourceType = video
             //Show last imported file
             if( SESSION_CLIP_COUNT ) showFileInEditor( SESSION_CLIP_COUNT - 1 );
+
+            //E5: Deferred auto-grade - apply --receipt without the copy-mask dialog.
+            //Deferred via QTimer::singleShot(0, ...) so the ctor (and thus ui->,
+            //m_pCopyMask, m_pReceiptClipboard) are all fully alive when we land.
+            if( !cliReceiptPath.isEmpty() )
+            {
+                const QString r = cliReceiptPath;
+                if( QFile( r ).exists() )
+                {
+                    //Force all copy-mask checkboxes on so every receipt field is copied,
+                    //except rawBlack/rawWhite (kept to MLV default; mirrors the safety
+                    //pattern of on_actionImportReceipt_triggered at line ~3646).
+                    Ui::ReceiptCopyMaskDialog *cdui = m_pCopyMask->ui;
+                    if( cdui )
+                    {
+                        cdui->checkBoxRawCorrection->setCheckState( Qt::Checked );
+                        cdui->checkBoxProcessing->setCheckState( Qt::Checked );
+                        cdui->checkBoxDetails->setCheckState( Qt::Checked );
+                        cdui->checkBoxExposure->setChecked( true );
+                        cdui->checkBoxContrast->setChecked( true );
+                        cdui->checkBoxPivot->setChecked( true );
+                        cdui->checkBoxWb->setChecked( true );
+                        cdui->checkBoxClarity->setChecked( true );
+                        cdui->checkBoxVibrance->setChecked( true );
+                        cdui->checkBoxSaturation->setChecked( true );
+                        cdui->checkBoxCurve->setChecked( true );
+                        cdui->checkBoxGradationCurve->setChecked( true );
+                        cdui->checkBoxHslCurves->setChecked( true );
+                        cdui->checkBoxShadows->setChecked( true );
+                        cdui->checkBoxHighlights->setChecked( true );
+                        cdui->checkBoxGradient->setChecked( true );
+                        cdui->checkBoxSharpen->setChecked( true );
+                        cdui->checkBoxChromaBlur->setChecked( true );
+                        cdui->checkBoxHighlightReconstruction->setChecked( true );
+                        cdui->checkBoxCameraMatrix->setChecked( true );
+                        cdui->checkBoxProfile->setChecked( true );
+                        cdui->checkBoxDenoise->setChecked( true );
+                        cdui->checkBoxGrain->setChecked( true );
+                        cdui->checkBoxRawCorrectEnable->setChecked( true );
+                        cdui->checkBoxDarkFrameSubtraction->setChecked( true );
+                        cdui->checkBoxVerticalStripes->setChecked( true );
+                        cdui->checkBoxFoxusDots->setChecked( true );
+                        cdui->checkBoxBadPixels->setChecked( true );
+                        cdui->checkBoxChromaSmooth->setChecked( true );
+                        cdui->checkBoxPatternNoise->setChecked( true );
+                        cdui->checkBoxDualIso->setChecked( true );
+                        cdui->checkBoxDebayer->setChecked( true );
+                        cdui->checkBoxToning->setChecked( true );
+                        cdui->checkBoxLut->setChecked( true );
+                        cdui->checkBoxFilter->setChecked( true );
+                        cdui->checkBoxVignette->setChecked( true );
+                        cdui->checkBoxTransformation->setCheckState( Qt::Checked );
+                        //Raw black/white: leave unchecked so replaceReceipt() does not
+                        //touch the MLV-native raw levels.
+                        cdui->checkBoxRawBlackLevel->setChecked( false );
+                        cdui->checkBoxRawWhiteLevel->setChecked( false );
+                    }
+
+                    auto applyCliReceipt = [this]( const QString & path )
+                    {
+                        //E7 diagnostic: dump state to a log file. qWarning in a Windows
+                        //GUI app goes to OutputDebugString, not stderr, so use QFile.
+                        {
+                            QFile lg( QDir::tempPath() + "/mlvapp_e7.log" );
+                            if( lg.open( QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text ) )
+                            {
+                                lg.write( ("REACHED path=" + path + "\n") .toUtf8() );
+                                lg.close();
+                            }
+                        }
+                        QFile file( path );
+                        if( !file.open( QIODevice::ReadOnly | QFile::Text ) )
+                        {
+                            qWarning() << "E5: cannot open receipt:" << path;
+                            return;
+                        }
+                        QXmlStreamReader Rxml;
+                        Rxml.setDevice( &file );
+                        int versionReceipt = 0;
+                        while( !Rxml.atEnd() )
+                        {
+                            Rxml.readNext();
+                            if( Rxml.isStartElement() && Rxml.name() == QLatin1String( "receipt" ) )
+                            {
+                                if( Rxml.attributes().size() != 0 )
+                                    versionReceipt = Rxml.attributes().at( 0 ).value().toInt();
+                                readXmlElementsFromFile( &Rxml, m_pReceiptClipboard, versionReceipt );
+                            }
+                        }
+                        file.close();
+
+                        //E5: pin rawBlack/rawWhite/cutIn/cutOut on the source receipt so
+                        //the paste does not clobber MLV-native raw levels or clip in/out.
+                        m_pReceiptClipboard->setRawWhite( -1 );
+                        m_pReceiptClipboard->setRawBlack( -1 );
+                        m_pReceiptClipboard->setCutIn( 1 );
+                        m_pReceiptClipboard->setCutOut( INT32_MAX );
+
+                        //E7 diagnostic: log state before paste
+                        {
+                            QFile lg( QDir::tempPath() + "/mlvapp_e7.log" );
+                            if( lg.open( QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text ) )
+                            {
+                                QString s = QString("BEFORE_PASTE clipboard.exposure=%1 temp=%2 profile=%3 row=%4 clipCount=%5 fileLoaded=%6\n")
+                                    .arg( m_pReceiptClipboard->exposure() )
+                                    .arg( m_pReceiptClipboard->temperature() )
+                                    .arg( m_pReceiptClipboard->profile() )
+                                    .arg( SESSION_ACTIVE_CLIP_ROW )
+                                    .arg( SESSION_CLIP_COUNT )
+                                    .arg( m_fileLoaded );
+                                lg.write( s.toUtf8() );
+                                lg.close();
+                            }
+                        }
+
+                        pasteReceiptFromClipboardTo( SESSION_ACTIVE_CLIP_ROW );
+
+                        //E7 diagnostic: log state after paste
+                        {
+                            QFile lg( QDir::tempPath() + "/mlvapp_e7.log" );
+                            if( lg.open( QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text ) )
+                            {
+                                ReceiptSettings * activeReceipt = GET_RECEIPT( SESSION_ACTIVE_CLIP_ROW );
+                                QString s = QString("AFTER_PASTE active.exposure=%1 temp=%2 profile=%3 sliderVal=%4\n")
+                                    .arg( activeReceipt->exposure() )
+                                    .arg( activeReceipt->temperature() )
+                                    .arg( activeReceipt->profile() )
+                                    .arg( ui->horizontalSliderExposure->value() );
+                                lg.write( s.toUtf8() );
+                                lg.close();
+                            }
+                        }
+                    };
+
+                    //E7 fix: call synchronously. QTimer::singleShot(0) needs a running event loop,
+                      //but this code sits inside the ctor before a.exec() and after a blocking
+                      //importNewMlv(), so the deferred slot never fired (receipt silently ignored).
+                      applyCliReceipt( r );
+                }
+                else
+                {
+                    qWarning() << "E5: receipt file not found:" << cliReceiptPath;
+                }
+            }
         }
         else if( QFile(fileName).exists() && fileName.endsWith( ".masxml", Qt::CaseInsensitive ) )
         {
@@ -196,6 +532,199 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
             if( FpmInstaller::installFpm( fileName ) )
                 QMessageBox::information( this, APPNAME, tr( "Installation of focus pixel map %1 successful." ).arg( QFileInfo( fileName ).fileName() ) );
         }
+
+        //E8: --export <dir> performs a REAL CLI-side DNG export (single frame).
+        //Reuses the exact API chain of SingleFrameExportDialog::exportDng(), minus the
+        //blocking QFileDialog / QMessageBox. Order matters: the raw frame is read and
+        //processed BEFORE the preview is rendered, because rendering writes state back
+        //into the clip raw processing object and would otherwise change the exported raw.
+        if( !cliExportDir.isEmpty() && m_pMlvObject && m_fileLoaded )
+        {
+            QDir().mkpath( cliExportDir );
+
+            const QString srcStem = QFileInfo( fileName ).completeBaseName();
+
+            //No UI in CLI mode: same defaults the dialog starts with (no stretch, full frame).
+            int32_t picAR[4] = { 1, 1, 1, 1 };
+
+            dngObject_t * cliDng = initDngObject( m_pMlvObject, CODEC_CNDG_DEFAULT, getFramerate(), picAR );
+            if( cliDng )
+            {
+                const uint32_t frameIdx = 0;
+
+                //Reserve the preview SubIFD before the raw is read
+                int pvW = 0, pvH = 0;
+                dngPreviewDimensions( m_pMlvObject, pvW, pvH );
+                dngPlanPreview( cliDng, pvW, pvH );
+
+                QString propsFn = QStandardPaths::writableLocation( QStandardPaths::DocumentsLocation );
+                propsFn.append( "/mlv-dng-params.txt" );
+
+                QString dngName = QString( "%1_%2.dng" )
+                                      .arg( srcStem )
+                                      .arg( getMlvFrameNumber( m_pMlvObject, frameIdx ), 6, 10, QChar(48) );
+                QString outPath = cliExportDir + "/" + dngName;
+                QByteArray outNative = outPath.toLocal8Bit();
+
+                //Phase 1: read + low level raw processing + build header
+                int prepare_rc = dngPrepareFrame( m_pMlvObject, cliDng, frameIdx,
+                                                  propsFn.toLocal8Bit().data() );
+
+                //Phase 2a: render + encode the JPEG preview (safe now, raw is final)
+                QByteArray previewJpeg;
+                int pw = 0, ph = 0;
+                if( prepare_rc == 0
+                        && dngMakeJpegPreview( m_pMlvObject, frameIdx, previewJpeg, pw, ph ) )
+                {
+                    fprintf( stdout, "E8: embedding %dx%d JPEG preview (%lld bytes)\n",
+                             pw, ph, ( long long )previewJpeg.size() );
+                    fflush( stdout );
+                }
+                else
+                {
+                    previewJpeg.clear();
+                    fprintf( stdout, "E8: no preview generated, writing DNG without preview\n" );
+                    fflush( stdout );
+                }
+
+                //Phase 2b: write header + raw + optional preview
+                int write_rc = dngWriteFrame( cliDng, ( char* )outNative.data(),
+                                              previewJpeg.isEmpty() ? NULL : ( const uint8_t* )previewJpeg.constData(),
+                                              previewJpeg.isEmpty() ? 0 : ( size_t )previewJpeg.size() );
+
+                freeDngObject( cliDng );
+
+                if( prepare_rc == 0 && write_rc == 0 && QFile( outPath ).exists() )
+                {
+                    fprintf( stdout, "E8: exported %s (%lld bytes)\n",
+                             outPath.toLocal8Bit().data(),
+                             ( long long )QFileInfo( outPath ).size() );
+                    fflush( stdout );
+                }
+                else
+                {
+                    fprintf( stderr, "E8: export FAILED for %s (prepare=%d write=%d)\n",
+                             outPath.toLocal8Bit().data(), prepare_rc, write_rc );
+                    fflush( stderr );
+                }
+            }
+            else
+            {
+                fprintf( stderr, "E8: initDngObject failed\n" );
+                fflush( stderr );
+            }
+        }
+        //E8c: --export-jpg <dir> writes the GRADED frame as JPEG (what-you-see-is-what-you-get).
+        //This is the path SingleFrameExportDialog::exportViaQt() uses: getMlvProcessedFrame8()
+        //returns the fully processed 8 bit RGB frame (receipt / WB / dual ISO already applied),
+        //unlike the DNG channel whose raw payload stays the untouched sensor data.
+        if( !cliExportJpgDir.isEmpty() && m_pMlvObject && m_fileLoaded )
+        {
+            QDir().mkpath( cliExportJpgDir );
+
+            const QString jpgStem = QFileInfo( fileName ).completeBaseName();
+            const uint32_t jpgFrame = 0;
+
+            const int w = getMlvWidth( m_pMlvObject );
+            const int h = getMlvHeight( m_pMlvObject );
+            uint8_t * rgb = ( uint8_t* )malloc( ( size_t )w * ( size_t )h * 3 );
+            if( rgb )
+            {
+                getMlvProcessedFrame8( m_pMlvObject, jpgFrame, rgb, QThread::idealThreadCount() );
+
+                QString jpgName = QString( "%1_%2.jpg" )
+                                      .arg( jpgStem )
+                                      .arg( getMlvFrameNumber( m_pMlvObject, jpgFrame ), 6, 10, QChar(48) );
+                QString jpgPath = cliExportJpgDir + "/" + jpgName;
+
+                // ★ CLI 也走与 GUI 完全相同的 saveImageWithSettings 链路
+                //   参数来自环境变量（便于自动化验收）
+                // ★ 坑修复：QImage 不拥有外部缓冲，
+                //   必须 copy() 或在使用完后再 free（否则段错误）
+                QImage cliImg = QImage( ( const uchar* )rgb, w, h, w * 3, QImage::Format_RGB888 ).copy();
+                free( rgb );
+
+                const QByteArray eFmtS  = qgetenv( "MLV_OUT_FMT" );
+                const int  eFmt   = ( eFmtS == "png" ) ? 1 : ( eFmtS == "tif" ? 2 : 0 );
+                const int  eQ     = qgetenv( "MLV_OUT_Q" ).isEmpty() ? 95 : QByteArray( qgetenv( "MLV_OUT_Q" ) ).toInt();
+                const int  eScale = qgetenv( "MLV_OUT_SCALE" ).isEmpty() ? 100 : QByteArray( qgetenv( "MLV_OUT_SCALE" ) ).toInt();
+                const int  eW     = qgetenv( "MLV_OUT_W" ).isEmpty() ? 0 : QByteArray( qgetenv( "MLV_OUT_W" ) ).toInt();
+                const bool eWm    = qgetenv( "MLV_OUT_WM" ) == "1";
+                const QString eWmTxt = qgetenv( "MLV_OUT_WMTXT" ).isEmpty()
+                                       ? QString::fromUtf8( "九段文化" )
+                                       : QString::fromUtf8( qgetenv( "MLV_OUT_WMTXT" ) );
+                const int  eWmPos = qgetenv( "MLV_OUT_WMPOS" ).isEmpty() ? 3 : QByteArray( qgetenv( "MLV_OUT_WMPOS" ) ).toInt();
+                const int  eCs    = qgetenv( "MLV_OUT_CS" ).isEmpty() ? 0 : QByteArray( qgetenv( "MLV_OUT_CS" ) ).toInt();
+
+                const char *eExt = ( eFmt == 1 ) ? "png" : ( eFmt == 2 ? "tif" : "jpg" );
+                jpgPath = cliExportJpgDir + "/" +
+                          QString( "%1_%2.%3" ).arg( jpgStem )
+                              .arg( getMlvFrameNumber( m_pMlvObject, jpgFrame ), 6, 10, QChar(48) )
+                              .arg( QString::fromLatin1( eExt ) );
+
+                const int effScale = ( eW > 0 ) ? 0 : eScale;
+                bool ok = saveImageWithSettings( cliImg, jpgPath,
+                                                 eFmt, eQ, effScale, eW,
+                                                 eWm, eWmTxt, 60, 70, eWmPos, eCs );
+
+                if( ok && QFile( jpgPath ).exists() )
+                {
+                    fprintf( stdout, "E8c: exported %s (%lld bytes)\n",
+                             jpgPath.toLocal8Bit().data(),
+                             ( long long )QFileInfo( jpgPath ).size() );
+                    fflush( stdout );
+                }
+                else
+                {
+                    fprintf( stderr, "E8c: JPG export FAILED for %s\n", jpgPath.toLocal8Bit().data() );
+                    fflush( stderr );
+                }
+            }
+            else
+            {
+                fprintf( stderr, "E8c: malloc failed for %dx%d frame\n", w, h );
+                fflush( stderr );
+            }
+        }
+
+        //E8b v2: CLI export has no interactive user - leave once the export is done.
+        //NOTE: do NOT use QTimer::singleShot here. We are still inside the
+        //MainWindow constructor, so a.exec() has not started and the deferred
+        //quit is never delivered (the window then hangs forever in a batch
+        //script). main.cpp reads m_cliShouldQuit before entering the loop.
+        if( !cliExportDir.isEmpty() || !cliExportJpgDir.isEmpty() )
+        {
+            m_cliShouldQuit = true;
+            fprintf( stdout, "E8b: CLI export finished, requesting exit\n" );
+            fflush( stdout );
+        }
+    }
+
+    //--tour-test: 启动自检开关。窗口起来后自动打开「功能导览」，
+    //供无 GUI 交互的验收脚本确认遮罩/气泡能正常创建（正常使用不传此参数）。
+    for( int ti = 1; ti < argc; ++ti )
+    {
+        const QString tourArg = QString::fromLocal8Bit( argv[ti] );
+        //--lang-test=zh|en : 启动 3 秒后自动切语言（自动化验收用，正常使用不传）
+        if( tourArg.startsWith( QLatin1String( "--lang-test=" ) ) )
+        {
+            const QString lg = tourArg.mid( int( qstrlen( "--lang-test=" ) ) );
+            QTimer::singleShot( 3000, this, [this, lg]() { applyLanguageNow( lg ); } );
+        }
+        if( tourArg.startsWith( QLatin1String( "--tour-test" ) ) )
+        {
+            const int eqPos = tourArg.indexOf( QLatin1Char( '=' ) );
+            if( eqPos > 0 ) g_tourStartStep = tourArg.mid( eqPos + 1 ).toInt();
+            QTimer::singleShot( 1200, this, SLOT( on_actionTour_triggered() ) );
+            break;
+        }
+    }
+
+    //语言菜单勾选状态与实际界面一致
+    {
+        const bool zhNow = uiIsChinese();
+        ui->actionLanguageZh->setChecked( zhNow );
+        ui->actionLanguageEn->setChecked( !zhNow );
     }
 
     //Update check, if autocheck enabled, once a day
@@ -234,6 +763,8 @@ MainWindow::~MainWindow()
     delete m_pScripting;
     delete m_pReceiptClipboard;
     delete m_pCopyMask;
+    delete m_pAiGradingPanel;
+    if( m_pTourOverlay ) { m_pTourOverlay->hide(); delete m_pTourOverlay; m_pTourOverlay = nullptr; }
     delete m_pAudioPlayback;
     delete m_pAudioWave;
     delete m_pGradientElement;
@@ -423,18 +954,37 @@ void MainWindow::dropEvent(QDropEvent *event)
     QStringList list;
     if( event->mimeData()->urls().size() > 0 )
     {
-        if( event->mimeData()->urls().at(0).path().endsWith( ".MLV", Qt::CaseInsensitive )
-         || event->mimeData()->urls().at(0).path().endsWith( ".MCRAW", Qt::CaseInsensitive )
-         || event->mimeData()->urls().at(0).path().endsWith( ".FPM", Qt::CaseInsensitive )
-         || event->mimeData()->urls().at(0).path().endsWith( ".COMMAND", Qt::CaseInsensitive ) )
+        if( event->mimeData()->urls().at(0).toLocalFile().endsWith( ".MLV", Qt::CaseInsensitive )
+         || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".MCRAW", Qt::CaseInsensitive )
+         || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".FPM", Qt::CaseInsensitive )
+         || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".COMMAND", Qt::CaseInsensitive ) )
         {
             for( int i = 0; i < event->mimeData()->urls().size(); i++ )
             {
-                list.append( event->mimeData()->urls().at(i).path() );
+                list.append( event->mimeData()->urls().at(i).toLocalFile() );
             }
             openMlvSet( list );
         }
-        else if( event->mimeData()->urls().at(0).path().endsWith( ".masxml", Qt::CaseInsensitive ) )
+        //RAW photos dropped -> same CR2 -> MLV import flow as the card button.
+        else if( event->mimeData()->urls().at(0).toLocalFile().endsWith( ".cr2", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".cr3", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".crf", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".dng", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".nef", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".raw", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".sr2", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".srf", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".nrw", Qt::CaseInsensitive )
+              || event->mimeData()->urls().at(0).toLocalFile().endsWith( ".arw", Qt::CaseInsensitive ) )
+        {
+            QStringList raws;
+            for( int i = 0; i < event->mimeData()->urls().size(); i++ )
+            {
+                raws.append( event->mimeData()->urls().at(i).toLocalFile() );
+            }
+            importRawFiles( raws );
+        }
+        else if( event->mimeData()->urls().at(0).toLocalFile().endsWith( ".masxml", Qt::CaseInsensitive ) )
         {
             if( SESSION_CLIP_COUNT && askToSaveCurrentSession() ) return;
 
@@ -685,7 +1235,7 @@ int MainWindow::openMlvForPreview(QString fileName)
 #ifdef Q_OS_UNIX
         new_MlvObject = initMlvObjectWithMcrawClip( fileName.toUtf8().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
 #else
-        new_MlvObject = initMlvObjectWithMcrawClip( fileName.toLatin1().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
+        new_MlvObject = initMlvObjectWithMcrawClip( fileName.toLocal8Bit().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
 #endif
         ui->comboBoxUseCameraMatrix->setCurrentIndex(0);
         on_comboBoxUseCameraMatrix_currentIndexChanged(0);
@@ -695,7 +1245,7 @@ int MainWindow::openMlvForPreview(QString fileName)
 #ifdef Q_OS_UNIX
         new_MlvObject = initMlvObjectWithClip( fileName.toUtf8().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
 #else
-        new_MlvObject = initMlvObjectWithClip( fileName.toLatin1().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
+        new_MlvObject = initMlvObjectWithClip( fileName.toLocal8Bit().data(), MLV_OPEN_PREVIEW, &mlvErr, mlvErrMsg );
 #endif
     }
 
@@ -853,7 +1403,7 @@ int MainWindow::openMlv( QString fileName )
 #ifdef Q_OS_UNIX
         new_MlvObject = initMlvObjectWithMcrawClip( fileName.toUtf8().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
 #else
-        new_MlvObject = initMlvObjectWithMcrawClip( fileName.toLatin1().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
+        new_MlvObject = initMlvObjectWithMcrawClip( fileName.toLocal8Bit().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
 #endif
     }
     else
@@ -861,7 +1411,7 @@ int MainWindow::openMlv( QString fileName )
 #ifdef Q_OS_UNIX
         new_MlvObject = initMlvObjectWithClip( fileName.toUtf8().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
 #else
-        new_MlvObject = initMlvObjectWithClip( fileName.toLatin1().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
+        new_MlvObject = initMlvObjectWithClip( fileName.toLocal8Bit().data(), mlvOpenMode, &mlvErr, mlvErrMsg );
 #endif
     }
 
@@ -873,7 +1423,7 @@ int MainWindow::openMlv( QString fileName )
     }
 
     //Set window title to filename
-    this->setWindowTitle( QString( "MLV App | %1" ).arg( fileName ) );
+    this->setWindowTitle( QString( "%1 | %2" ).arg( APPNAME ).arg( fileName ) );
 
     m_fileLoaded = false;
 
@@ -985,7 +1535,7 @@ int MainWindow::openMlv( QString fileName )
     m_pInfoDialog->ui->tableWidget->item( 9, 1 )->setText( ACTIVE_CLIP->getElement( 11 ).toString() );
     m_pInfoDialog->ui->tableWidget->item( 10, 1 )->setText( dualIsoInfo );
     m_pInfoDialog->ui->tableWidget->item( 11, 1 )->setText( ACTIVE_CLIP->getElement( 14 ).toString() );
-    m_pInfoDialog->ui->tableWidget->item( 12, 1 )->setText( QString( "%1 black,  %2 white" ).arg( getMlvOriginalBlackLevel( m_pMlvObject ) ).arg( getMlvOriginalWhiteLevel( m_pMlvObject ) ) );
+    m_pInfoDialog->ui->tableWidget->item( 12, 1 )->setText( tr( "%1 black,  %2 white" ).arg( getMlvOriginalBlackLevel( m_pMlvObject ) ).arg( getMlvOriginalWhiteLevel( m_pMlvObject ) ) );
     m_pInfoDialog->ui->tableWidget->item( 13, 1 )->setText( ACTIVE_CLIP->getElement( 15 ).toString() );
     m_pInfoDialog->ui->tableWidget->item( 14, 1 )->setText( ACTIVE_CLIP->getElement( 16 ).toString() );
     m_pInfoDialog->ui->tableWidget->item( 15, 1 )->setText( ACTIVE_CLIP->getElement( 17 ).toString() + ",  " + ACTIVE_CLIP->getElement( 18 ).toString() );
@@ -1047,9 +1597,8 @@ int MainWindow::openMlv( QString fileName )
     //enable drawing
     m_dontDraw = false;
 
-    //Enable export now
-    ui->actionExport->setEnabled( true );
-    ui->actionExportCurrentFrame->setEnabled( true );
+    //Enable export now（按素材类型决定：照片只亮「导出图片」，视频亮「导出帧」）
+    updateExportButtons();
 
     //If clip loaded, import receipt is enabled
     ui->actionImportReceipt->setEnabled( true );
@@ -1245,6 +1794,9 @@ void MainWindow::initGui( void )
     m_pInfoDialog = new InfoDialog( this );
     m_pStatusDialog = new StatusDialog( this );
     m_pCopyMask = new ReceiptCopyMaskDialog( this );
+    m_pAiGradingPanel = nullptr;          // 懒加载：首次点「AI 智能调色」时才建
+    m_pTourOverlay = nullptr;             // 功能导览遮罩：首次点「功能导览」时才建
+    m_tourAiPanelWasVisible = false;
     ui->actionShowHistogram->setChecked( true );
 
     //Export abort connection
@@ -1383,7 +1935,7 @@ void MainWindow::initGui( void )
 
     //Init session settings
     m_pModel = new SessionModel( this );
-    m_pProxyModel = new QSortFilterProxyModel( this );
+    m_pProxyModel = new SessionTypeFilterProxyModel( this );
     m_pProxyModel->setSourceModel( m_pModel );
     ui->listViewSession->setModel( m_pProxyModel );
     ui->tableViewSession->setModel( m_pProxyModel );
@@ -1391,6 +1943,46 @@ void MainWindow::initGui( void )
     ui->tableViewSession->setSortingEnabled( true );
     ui->tableViewSession->sortByColumn(0, Qt::AscendingOrder);
     m_pSelectionModel = ui->listViewSession->selectionModel();
+
+    //素材池列表：缩略图带「图片/视频」角标，右下角可点星打分
+    m_pStarDelegate = new StarRatingDelegate( this );
+    ui->listViewSession->setItemDelegate( m_pStarDelegate );
+    ui->listViewSession->setMouseTracking( true );
+
+    //素材池类型筛选：全部 / 只看图片 / 只看视频
+    //（筛选框和滑块现在素材池顶部的控制条里，不再挤在工具栏里被溢出菜单吃掉）
+    m_pTypeFilterCombo = ui->comboBoxTypeFilter;
+    connect( m_pTypeFilterCombo, SIGNAL( currentIndexChanged( int ) ),
+             this, SLOT( onTypeFilterChanged( int ) ) );
+
+    //预览大小缩放滑块：推动时实时改变缩略图尺寸
+    m_previewThumbWidth = 130;
+    m_pPreviewSizeSlider = ui->horizontalSliderPreviewSize;
+    m_pPreviewSizeSlider->setValue( m_previewThumbWidth );
+    m_pPreviewSizeLabel = ui->labelPreviewSize;
+    connect( m_pPreviewSizeSlider, SIGNAL( valueChanged( int ) ),
+             this, SLOT( onPreviewSizeChanged( int ) ) );
+
+    //导入气泡按钮：材料池顶部两个长条按钮，替代原来占地方的独立导入面板
+    connect( ui->toolButtonBubbleVideo, SIGNAL( clicked() ),
+             this, SLOT( on_cardMlvVideo_clicked() ) );
+    connect( ui->toolButtonBubblePhoto, SIGNAL( clicked() ),
+             this, SLOT( on_cardCr2Photo_clicked() ) );
+
+    //给工具栏导出按钮起名，供「功能导览」精确定位（气泡高亮到按钮上）
+    if( QWidget *w = ui->mainToolBar->widgetForAction( ui->actionExport ) )
+        w->setObjectName( QStringLiteral( "toolButtonExport" ) );
+    if( QWidget *w = ui->mainToolBar->widgetForAction( ui->actionExportCurrentFrame ) )
+        w->setObjectName( QStringLiteral( "toolButtonExportFrame" ) );
+
+    // ★ 显式连接导出动作：
+    //   工具栏 QAction 不走 Qt 自动连接（on_xxx_triggered 命名约定对 action 无效）
+    connect( ui->actionExportCurrentFrame, SIGNAL( triggered() ),
+             this, SLOT( on_actionExportCurrentFrame_triggered() ) );
+    connect( ui->actionExport, SIGNAL( triggered() ),
+             this, SLOT( on_actionExport_triggered() ) );
+    if( QWidget *w = ui->mainToolBar->widgetForAction( ui->actionBatchExportImages ) )
+        w->setObjectName( QStringLiteral( "toolButtonBatchExportImages" ) );
 
     //Reset session name
     m_sessionFileName.clear();
@@ -1513,15 +2105,23 @@ void MainWindow::initGui( void )
     m_countTimeDown = -1;   //Time in seconds for CPU countdown
 
     //raw2mlv available?
-    ui->actionTranscodeAndImport->setVisible( false );
-#ifdef Q_OS_WIN
-    if( QFileInfo( QString( "%1/raw2mlv.exe" ).arg( QCoreApplication::applicationDirPath() ) ).exists() )
-        ui->actionTranscodeAndImport->setVisible( true );
-#endif
-#ifdef Q_OS_UNIX
-    if( QFileInfo( QString( "%1/raw2mlv" ).arg( QCoreApplication::applicationDirPath() ) ).exists() )
-        ui->actionTranscodeAndImport->setVisible( true );
-#endif
+        ui->actionTranscodeAndImport->setVisible( false );
+        //Left sidebar CR2 card follows the same gate as the menu action
+        ui->toolButtonBubblePhoto->setEnabled( false );
+    #ifdef Q_OS_WIN
+        if( QFileInfo( QString( "%1/raw2mlv.exe" ).arg( QCoreApplication::applicationDirPath() ) ).exists() )
+        {
+            ui->actionTranscodeAndImport->setVisible( true );
+            ui->toolButtonBubblePhoto->setEnabled( true );
+        }
+    #endif
+    #ifdef Q_OS_UNIX
+        if( QFileInfo( QString( "%1/raw2mlv" ).arg( QCoreApplication::applicationDirPath() ) ).exists() )
+        {
+            ui->actionTranscodeAndImport->setVisible( true );
+            ui->toolButtonBubblePhoto->setEnabled( true );
+        }
+    #endif
 
     //Rename selected clip (only one! selected clip)
     connect( ui->actionRename, SIGNAL( triggered() ), this, SLOT( renameActiveClip() ) );
@@ -1827,7 +2427,7 @@ void MainWindow::startExportPipe(QString fileName)
 #ifdef Q_OS_UNIX
         writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toUtf8().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
 #else
-        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toLatin1().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
+        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toLocal8Bit().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
 #endif
         if( m_codecProfile == CODEC_H264 || m_codecProfile == CODEC_H265_8 || m_codecProfile == CODEC_H265_10 || m_codecProfile == CODEC_H265_12 )
             ffmpegAudioCommand = QString( "-i \"%1\" -c:a aac " ).arg( wavFileName );
@@ -2112,7 +2712,7 @@ void MainWindow::startExportPipe(QString fileName)
     #ifdef Q_OS_UNIX
         if( !( pPipeStab = popen( stabCmd.toUtf8().data(), "w" ) ) )
     #else
-        if( !( pPipeStab = popen( stabCmd.toLatin1().data(), "wb" ) ) )
+        if( !( pPipeStab = popen( stabCmd.toLocal8Bit().data(), "wb" ) ) )
     #endif
         {
             QMessageBox::critical( this, tr( "File export failed" ), tr( "Could not export with ffmpeg." ) );
@@ -2648,7 +3248,7 @@ void MainWindow::startExportPipe(QString fileName)
 #ifdef Q_OS_UNIX
         if( !( pPipe = popen( program.toUtf8().data(), "w" ) ) )
 #else
-    if( !( pPipe = popen( program.toLatin1().data(), "wb" ) ) )
+    if( !( pPipe = popen( program.toLocal8Bit().data(), "wb" ) ) )
 #endif
         {
             QMessageBox::critical( this, tr( "File export failed" ), tr( "Could not export with ffmpeg." ) );
@@ -2827,7 +3427,7 @@ void MainWindow::startExportCdng(QString fileName)
 #ifdef Q_OS_UNIX
         writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toUtf8().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
 #else
-        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toLatin1().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
+        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toLocal8Bit().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
 #endif
     }
 
@@ -2919,7 +3519,7 @@ void MainWindow::startExportCdng(QString fileName)
 #else
         QString properties_fn = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
         properties_fn.append("\\mlv-dng-params.txt");
-        if( saveDngFrame( m_pMlvObject, cinemaDng, frame, filePathNr.toLatin1().data(), properties_fn.toLatin1().data() ) )
+        if( saveDngFrame( m_pMlvObject, cinemaDng, frame, filePathNr.toLocal8Bit().data(), properties_fn.toLocal8Bit().data() ) )
 #endif
         {
             m_pStatusDialog->close();
@@ -2990,7 +3590,7 @@ void MainWindow::startExportMlv(QString fileName)
 #ifdef Q_OS_UNIX
     FILE* mlvOut = fopen(pathName.toUtf8().data(), "wb");
 #else
-    FILE* mlvOut = fopen(pathName.toLatin1().data(), "wb");
+    FILE* mlvOut = fopen(pathName.toLocal8Bit().data(), "wb");
 #endif
     if (!mlvOut)
     {
@@ -3008,7 +3608,7 @@ void MainWindow::startExportMlv(QString fileName)
 #ifdef Q_OS_UNIX
     int ret = saveMlvHeaders( m_pMlvObject, mlvOut, exportAudio, m_codecOption, m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut(), VERSION.toUtf8().data(), errorMessage );
 #else
-    int ret = saveMlvHeaders( m_pMlvObject, mlvOut, exportAudio, m_codecOption, m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut(), VERSION.toLatin1().data(), errorMessage );
+    int ret = saveMlvHeaders( m_pMlvObject, mlvOut, exportAudio, m_codecOption, m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut(), VERSION.toLocal8Bit().data(), errorMessage );
 #endif
     //Output frames loop
     for( uint32_t frame = m_exportQueue.first()->cutIn() - 1; frame < m_exportQueue.first()->cutOut(); frame++ )
@@ -3203,7 +3803,7 @@ void MainWindow::startExportAVFoundation(QString fileName)
                                            AVF_COLOURSPACE_SRGB,
                                            getFramerate() );
 
-    beginWritingVideoFile(encoder, fileName.toUtf8().data());
+    beginWritingVideoFile(encoder, fileName.toLocal8Bit().data());
 
     //Build buffer
     uint32_t frameSize = getMlvWidth( m_pMlvObject ) * getMlvHeight( m_pMlvObject ) * 3;
@@ -3288,7 +3888,7 @@ void MainWindow::startExportAVFoundation(QString fileName)
     if( m_audioExportEnabled && doesMlvHaveAudio( m_pMlvObject ) && !m_exportAbortPressed )
     {
         QString wavFileName = QString( "%1.wav" ).arg( fileName.left( fileName.lastIndexOf( "." ) ) );
-        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toUtf8().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
+        writeMlvAudioToWaveCut( m_pMlvObject, wavFileName.toLocal8Bit().data(), m_exportQueue.first()->cutIn(), m_exportQueue.first()->cutOut() );
 
         QString tempFileName = QString( "%1_temp.mov" ).arg( fileName.left( fileName.lastIndexOf( "." ) ) );
         QFile( fileName ).rename( tempFileName );
@@ -3360,6 +3960,8 @@ void MainWindow::addFileToSession(QString fileName)
 
     //Add to session list (empty Pixmap is just spacer)
     ClipInformation *clipInfo = new ClipInformation( QFileInfo(fileName).fileName(), fileName );
+    //记录素材来源：由 CR2/DNG 转码而来的标记为「图片」，其余为「视频」
+    clipInfo->setSourceType( m_pendingImportIsImage ? QString( "image" ) : QString( "video" ) );
     m_pModel->append( clipInfo );
     m_pModel->setActiveRow( SESSION_CLIP_COUNT - 1 );
 
@@ -3368,6 +3970,7 @@ void MainWindow::addFileToSession(QString fileName)
 
     //Update App
     listViewSessionUpdate();
+    updateExportButtons();
     qApp->processEvents();
 }
 
@@ -4429,7 +5032,7 @@ void MainWindow::deleteSession()
     m_pModel->clear();
 
     //Set window title to filename
-    this->setWindowTitle( QString( "MLV App" ) );
+    this->setWindowTitle( APPNAME );
 
     //disable drawing and kill old timer and old WaveFormMonitor
     m_fileLoaded = false;
@@ -4457,7 +5060,7 @@ void MainWindow::deleteSession()
         m_pInfoDialog->ui->tableWidget->item( i, 1 )->setText( "–" );
     }
 
-    ui->label_resResolution->setText( "0 x 0 pixels" );
+    ui->label_resResolution->setText( tr( "0 x 0 pixels" ) );
 
     //Adapt slider to clip and move to position 0
     ui->horizontalSliderPosition->setValue( 0 );
@@ -5176,6 +5779,12 @@ int MainWindow::showFileInEditor(int row)
     //Set sliders to receipt
     setSliders( GET_RECEIPT( row ), false );
 
+    //AI 调色面板跟随当前 clip（面板常驻，receipt 换了必须重新指向）
+    if( m_pAiGradingPanel )
+    {
+        m_pAiGradingPanel->setContext( GET_RECEIPT( row ), m_pProcessingObject );
+    }
+
     //Repaint the tables
     ui->listViewSession->reset();
     on_actionShowRedClips_toggled( ui->actionShowRedClips->isChecked() );
@@ -5203,7 +5812,7 @@ void MainWindow::addClipToExportQueue(int row, QString fileName)
     //A file must be opened once before being able to be exported
     if( GET_RECEIPT( row )->wasNeverLoaded() )
     {
-        m_pStatusDialog->ui->label->setText( "Preparing export..." );
+        m_pStatusDialog->ui->label->setText( tr( "Preparing export..." ) );
         m_pStatusDialog->ui->labelEstimatedTime->setText( "" );
         m_pStatusDialog->ui->progressBar->setValue( 0 );
         m_pStatusDialog->open();
@@ -5953,7 +6562,7 @@ void MainWindow::on_actionAbout_triggered()
         pixmap.save(&buffer, "PNG");
         QString pic = QString("<img width='128' height='112' align='right' src=\"data:image/png;base64,") + byteArray.toBase64() + "\"/>";
 
-        QMessageBox::about( this, QString( "About %1" ).arg( APPNAME ),
+        QMessageBox::about( this, tr( "About %1" ).arg( APPNAME ),
                                   QString(
                                     "<html>%1"
                                     "<body><h3>%2</h3>"
@@ -6830,6 +7439,66 @@ void MainWindow::on_actionExport_triggered()
     //Stop playback if active
     ui->actionPlay->setChecked( false );
 
+    //【自动分流】先看选中的是什么素材：
+    //全部/多数是照片 -> 走图片批量导出（先弹导出设置）
+    //否则 -> 走原来的视频导出流程
+    if( SESSION_CLIP_COUNT > 0 )
+    {
+        QVector<int> probeRows;
+        QModelIndexList probeSel = selectedClipsList();
+        if( probeSel.isEmpty() )
+        {
+            for( int i = 0; i < SESSION_CLIP_COUNT; i++ ) probeRows.append( i );
+        }
+        else
+        {
+            for( int k = 0; k < probeSel.size(); k++ )
+            {
+                const int r = m_pProxyModel->mapToSource( probeSel.at( k ) ).row();
+                if( r >= 0 && !probeRows.contains( r ) ) probeRows.append( r );
+            }
+        }
+        int imgCount = 0, vidCount = 0;
+        for( int k = 0; k < probeRows.size(); k++ )
+        {
+            ClipInformation *c = m_pModel->clip( probeRows.at( k ) );
+            if( !c ) continue;
+            if( c->isImageClip() ) imgCount++; else vidCount++;
+        }
+        //只要有照片且没有视频 -> 走图片批量
+        if( imgCount > 0 && vidCount == 0 )
+        {
+            exportImagesAuto();
+            return;
+        }
+        //混合选择：问一下要导哪一类
+        if( imgCount > 0 && vidCount > 0 )
+        {
+            QMessageBox mb( this );
+            mb.setIcon( QMessageBox::Question );
+            mb.setWindowTitle( APPNAME );
+            mb.setText( tr( "The selection contains %1 photo(s) and %2 video clip(s).\n\nWhich do you want to export?" )
+                        .arg( imgCount ).arg( vidCount ) );
+
+            QPushButton *btnImg = mb.addButton( tr( "Export photos" ), QMessageBox::AcceptRole );
+            QPushButton *btnVid = mb.addButton( tr( "Export videos" ), QMessageBox::AcceptRole );
+            mb.exec();
+            if( mb.clickedButton() == btnImg )
+            {
+                exportImagesAuto();
+                return;
+            }
+            if( mb.clickedButton() != btnVid ) return;   //取消
+        }
+    }
+
+    // 防护：没有有效活跃素材时不要往下走（ACTIVE_RECEIPT 可能为空）
+    if( ACTIVE_RECEIPT == nullptr || SESSION_ACTIVE_CLIP_ROW < 0 )
+    {
+        QMessageBox::information( this, APPNAME, tr( "Please select a clip first." ) );
+        return;
+    }
+
     //Save slider receipt
     setReceipt( ACTIVE_RECEIPT );
 
@@ -7054,14 +7723,757 @@ void MainWindow::on_actionExport_triggered()
 //Export actual frame as 16bit png
 void MainWindow::on_actionExportCurrentFrame_triggered()
 {
-    SingleFrameExportDialog *exportDialog = new SingleFrameExportDialog( this,
-                                                                         m_pMlvObject,
-                                                                         ACTIVE_RECEIPT->fileName(),
-                                                                         ui->horizontalSliderPosition->value(),
-                                                                         getHorizontalStretchFactor(true),
-                                                                         getVerticalStretchFactor(true) );
-    exportDialog->exec();
-    delete exportDialog;
+    // 防护：至少要有素材。
+    // ★ 照片素材不要求 m_pMlvObject（照片走图像通道，不需 MLV 帧对象）
+    if( SESSION_CLIP_COUNT <= 0 || SESSION_ACTIVE_CLIP_ROW < 0 )
+    {
+        QMessageBox::information( this, APPNAME, tr( "Please import and select a clip first." ) );
+        return;
+    }
+
+    //★ 统一走「图片导出设置」（格式/画质/分辨率/EXIF/色彩空间/命名规则）
+    // 不再用旧的 SingleFrameExportDialog
+    ImageExportDialog dlg( this );
+    const int curRow = SESSION_ACTIVE_CLIP_ROW;
+    QString srcDir;                                 // 源素材所在文件夹
+    if( curRow >= 0 && curRow < SESSION_CLIP_COUNT )
+    {
+        ClipInformation *c = m_pModel->clip( curRow );
+        if( c )
+        {
+            srcDir = QFileInfo( c->getPath() ).absolutePath();
+            if( c->isImageClip() )
+            {
+                //照片：只导这一张
+                dlg.setSingleImageMode( true );
+            }
+        }
+    }
+    // ★ 输出目录默认：原素材所在文件夹（同文件夹）
+    if( !srcDir.isEmpty() && QDir( srcDir ).exists() )
+    {
+        //把源目录交给对话框：勾选「输出到源文件夹」时它自动填入并锁定输入框
+        dlg.setSourceDir( srcDir );
+    }
+    if( !dlg.outputDir().isEmpty() )
+    {
+        // 界面上已有用户上次选的路径（QSettings 记忆），保留
+    }
+    else if( !m_lastExportPath.isEmpty() )
+    {
+        dlg.setOutputDir( m_lastExportPath );
+    }
+    if( dlg.exec() != QDialog::Accepted ) return;
+
+    QString outDir = dlg.outputDir();
+    if( outDir.isEmpty() )
+    {
+        outDir = QFileDialog::getExistingDirectory( this, tr( "Choose export folder" ),
+                                                    m_lastExportPath, QFileDialog::ShowDirsOnly );
+        if( outDir.isEmpty() ) return;
+    }
+    m_lastExportPath = outDir;
+
+    //取当前帧素材的图像并保存
+    exportCurrentFrameWithSettings( dlg, outDir );
+}
+
+//按当前素材类型决定哪些导出按钮可用：照片亮「导出图片」，视频亮「导出帧 / 导出片段」
+void MainWindow::updateExportButtons( void )
+{
+    // 以素材池裡有没有素材为准（不再依赖 m_pMlvObject：照片刚导入时它可能还没就绪）
+    const bool hasClip = ( SESSION_CLIP_COUNT > 0 );
+    ClipInformation *ci = ( hasClip && SESSION_ACTIVE_CLIP_ROW >= 0 ) ? m_pModel->clip( SESSION_ACTIVE_CLIP_ROW ) : nullptr;
+    const bool isImage = ( ci != nullptr && ci->isImageClip() );
+
+    // 「导出」按钮要自动分流照片/视频，
+    // 所以只要有素材就启用（不再限制为视频）
+    ui->actionExport->setEnabled( hasClip );
+
+    // 「导出当前帧」：视频导出当前一帧；
+    // 照片也支持（导出这一张）—— 照片本身就是单帧
+    ui->actionExportCurrentFrame->setEnabled( hasClip );
+
+    //照片专用（池里存在照片素材就可批量出图）
+    bool anyImage = false;
+    for( int i = 0; i < SESSION_CLIP_COUNT; i++ )
+    {
+        ClipInformation *c = m_pModel->clip( i );
+        if( c && c->isImageClip() ) { anyImage = true; break; }
+    }
+    ui->actionBatchExportImages->setEnabled( anyImage );
+}
+
+//素材池类型筛选切换
+void MainWindow::onTypeFilterChanged( int index )
+{
+    Q_UNUSED( index );
+    if( m_pTypeFilterCombo == nullptr ) return;
+    m_pProxyModel->setFilterType( m_pTypeFilterCombo->currentData().toInt() );
+    updateExportButtons();
+}
+
+//预览大小缩放：改变 IconMode 下的缩略图尺寸，只作用于缩略图视图（2/3）
+void MainWindow::onPreviewSizeChanged( int value )
+{
+    m_previewThumbWidth = value;
+    if( m_pPreviewSizeLabel != nullptr )
+    {
+        m_pPreviewSizeLabel->setText( tr( "Preview %1" ).arg( value ) );
+        m_pPreviewSizeLabel->setToolTip( tr( "Thumbnail width %1 px" ).arg( value ) );
+    }
+    //仅缩略图视图（previewMode 2/3）才有意义，其余模式不改
+    if( m_previewMode != 2 && m_previewMode != 3 ) return;
+    const int h = qMax( 40, value * 80 / 130 );
+    ui->listViewSession->setIconSize( QSize( value, h ) );
+    ui->listViewSession->setGridSize( QSize( value + 12, h + 22 ) );
+}
+
+//批量导出图片：把选中的（或全部）照片素材各导出一张 JPG（带调色，所见即所得）
+//独立实现，不改动用户的导出设置（m_codecProfile 等）
+//打开导出设置窗口（图片与视频共用同一份设置）
+bool MainWindow::openExportSettingsDialog()
+{
+    ExportSettingsDialog *pExportSettings = new ExportSettingsDialog( this,
+                                                                      m_pScripting,
+                                                                      m_codecProfile,
+                                                                      m_codecOption,
+                                                                      m_exportDebayerMode,
+                                                                      m_resizeFilterEnabled,
+                                                                      m_resizeWidth,
+                                                                      m_resizeHeight,
+                                                                      m_fpsOverride,
+                                                                      m_frameRate,
+                                                                      m_audioExportEnabled,
+                                                                      m_resizeFilterHeightLocked,
+                                                                      m_smoothFilterSetting,
+                                                                      m_hdrExport );
+    const int rc = pExportSettings->exec();
+    m_codecProfile = pExportSettings->encoderSetting();
+    m_codecOption = pExportSettings->encoderOption();
+    m_exportDebayerMode = pExportSettings->debayerMode();
+    m_resizeFilterEnabled = pExportSettings->isResizeEnabled();
+    m_resizeWidth = pExportSettings->resizeWidth();
+    m_resizeHeight = pExportSettings->resizeHeight();
+    m_fpsOverride = pExportSettings->isFpsOverride();
+    m_frameRate = pExportSettings->getFps();
+    m_audioExportEnabled = pExportSettings->isExportAudioEnabled();
+    m_resizeFilterHeightLocked = pExportSettings->isHeightLocked();
+    m_smoothFilterSetting = pExportSettings->smoothSetting();
+    m_hdrExport = pExportSettings->hdrBlending();
+    delete pExportSettings;
+    return ( rc == QDialog::Accepted );
+}
+
+//★ 统一的「按设置保存一张图」：格式/画质/分辨率/水印/色彩空间
+static bool saveImageWithSettings( QImage img, const QString &outPath,
+                                   int fmt, int quality, int scalePct, int customW,
+                                   bool wmEnabled, const QString &wmText,
+                                   int wmSize, int wmOpacity, int wmCorner,
+                                   int colorSpace )
+{
+    if( img.isNull() ) return false;
+
+    // 分辨率
+    int targetW = 0;
+    if( scalePct == 0 ) targetW = customW;
+    else if( scalePct < 100 ) targetW = img.width() * scalePct / 100;
+    if( targetW > 0 && targetW != img.width() && targetW >= 16 )
+    {
+        img = img.scaledToWidth( targetW, Qt::SmoothTransformation );
+    }
+
+    // 色彩空间：0=sRGB 1=AdobeRGB 2=原样
+    // 用 Qt 5.14+ 的 QColorSpace：写入 ICC 到 PNG/TIFF；JPG 也会带 ICC APP2 段
+    if( colorSpace == 0 )
+    {
+        img.setColorSpace( QColorSpace( QColorSpace::SRgb ) );
+    }
+    else if( colorSpace == 1 )
+    {
+        img.setColorSpace( QColorSpace( QColorSpace::AdobeRgb ) );
+    }
+    // colorSpace == 2 -> 原样，不设置
+
+    // 数字水印
+    if( wmEnabled && !wmText.isEmpty() )
+    {
+        QPainter p( &img );
+        p.setRenderHint( QPainter::TextAntialiasing, true );
+        QFont f;
+        f.setBold( true );
+        f.setPixelSize( qMax( 8, wmSize ) );
+        p.setFont( f );
+        p.setPen( QColor( 255, 255, 255, wmOpacity * 255 / 100 ) );
+
+        const QFontMetrics fm( f );
+        const int tw = fm.horizontalAdvance( wmText );
+        const int th = fm.height();
+        const int margin = qMax( 10, img.width() / 40 );
+        int x = margin, y = margin + th;
+        switch( wmCorner )
+        {
+            case 0: x = margin;                       y = margin + th;                      break;
+            case 1: x = img.width() - tw - margin;     y = margin + th;                      break;
+            case 2: x = margin;                       y = img.height() - margin;            break;
+            case 3: x = img.width() - tw - margin;     y = img.height() - margin;            break;
+            default: x = ( img.width() - tw ) / 2;     y = ( img.height() + th ) / 2;        break;
+        }
+        // 先画一层黑色阴影，浅色图上也能看清
+        p.setPen( QColor( 0, 0, 0, wmOpacity * 200 / 100 ) );
+        p.drawText( x + 2, y + 2, wmText );
+        p.setPen( QColor( 255, 255, 255, wmOpacity * 255 / 100 ) );
+        p.drawText( x, y, wmText );
+        p.end();
+    }
+
+    // 保存
+    if( fmt == 0 ) return img.save( outPath, "JPG", quality );
+    if( fmt == 1 ) return img.save( outPath, "PNG" );
+    return img.save( outPath, "TIF" );
+}
+
+//★ EXIF 保留：用本机 exiftool 把原始素材的 EXIF 写入导出图
+// 返回 true=成功（或无需写）；false=写入失败（图片本身已保存，不影响主流程）
+static bool copyExifFrom( const QString &srcMedia, const QString &dstImage )
+{
+    if( srcMedia.isEmpty() || !QFile::exists( srcMedia ) ) return true;   //无源可抄，不报错
+    if( !QFile::exists( dstImage ) ) return false;
+
+    // exiftool 位置：同目录 exiftool / exiftool.exe
+    QString base = QCoreApplication::applicationDirPath();
+    QStringList candidates;
+    candidates << base + "/exiftool.exe" << base + "/exiftool";
+#ifdef Q_OS_WIN
+    candidates << "I:/AI_Tools/cr2hdr/exiftool.exe";
+#endif
+
+    QString exiftool;
+    for( int i = 0; i < candidates.size(); i++ )
+    {
+        if( QFile::exists( candidates.at( i ) ) ) { exiftool = candidates.at( i ); break; }
+    }
+    if( exiftool.isEmpty() ) return false;
+
+    QProcess proc;
+    proc.setProgram( exiftool );
+    proc.setArguments( QStringList()
+        << "-q" << "-overwrite_original"
+        << ( "-tagsFromFile" ) << QDir::toNativeSeparators( srcMedia )
+        << "-EXIF:all" << "-IPTC:all" << "-XMP:all"
+        << QDir::toNativeSeparators( dstImage ) );
+    proc.start();
+    if( !proc.waitForFinished( 20000 ) ) return false;
+    return ( proc.exitCode() == 0 );
+}
+
+//DNG 导出：直接走 RAW 层（包含 DualISO 合并、去掉双感光度条纹），
+//但不经过彩色处理——DNG 存的是尚未 demosaic 的原始 Bayer 数据。
+bool MainWindow::exportDngFrame( const QString &outPath, int frameIdx )
+{
+    if( m_pMlvObject == nullptr ) return false;
+    if( frameIdx < 0 ) frameIdx = 0;
+
+    //★ DualISO：DNG 写的是 RAW 层，必须显式开启合并，
+    //  否则双感光度的行交错会原样写进 DNG（成片就是横条纹）。
+    //  三个条件必须同时满足：dual_iso==1 且 diso_validity 有效 且 fix_raw==1。
+    const int savedDualMode = m_pMlvObject->llrawproc->dual_iso;
+    const int savedFixRaw   = m_pMlvObject->llrawproc->fix_raw;
+    const int savedDisoVal  = m_pMlvObject->llrawproc->diso_validity;
+
+    llrpSetDualIsoValidity( m_pMlvObject, 0 );      //先自动检测 DISO block
+    int disoVal = m_pMlvObject->llrawproc->diso_validity;
+
+    //raw2mlv 转出来的 MLV 通常没有 DISO 元数据块，自动检测会失败；
+    //这时退到强制模式（diso1=diso2=当前ISO），至少能把行交错合并掉。
+    if( disoVal == DISO_INVALID )
+    {
+        llrpSetDualIsoValidity( m_pMlvObject, 1 );
+        disoVal = m_pMlvObject->llrawproc->diso_validity;
+    }
+
+    const bool isDualIso = ( disoVal != DISO_INVALID );
+    if( isDualIso )
+    {
+        llrpSetFixRawMode( m_pMlvObject, 1 );
+        llrpSetDualIsoMode( m_pMlvObject, 1 );     //Full 20bit 合并
+    }
+
+    int32_t picAR[4] = { 1, 1, 1, 1 };
+    dngObject_t * dng = initDngObject( m_pMlvObject, CODEC_CNDG_DEFAULT, getFramerate(), picAR );
+    if( dng == nullptr ) return false;
+
+    //预留预览 SubIFD（必须在读 raw 之前）
+    int pvW = 0, pvH = 0;
+    dngPreviewDimensions( m_pMlvObject, pvW, pvH );
+    dngPlanPreview( dng, pvW, pvH );
+
+    QString propsFn = QStandardPaths::writableLocation( QStandardPaths::DocumentsLocation );
+    propsFn.append( "/mlv-dng-params.txt" );
+
+    //Phase 1: 读 raw + 低层 raw 处理 + 建头（DualISO 合并在此完成）
+    const int prepare_rc = dngPrepareFrame( m_pMlvObject, dng, ( uint32_t )frameIdx,
+                                            propsFn.toLocal8Bit().data() );
+
+    //Phase 2a: 渲染 JPEG 预览（反映当前调色，供文件管理器/LR 缩略图看）
+    QByteArray previewJpeg;
+    int pw = 0, ph = 0;
+    if( prepare_rc == 0
+            && dngMakeJpegPreview( m_pMlvObject, ( uint32_t )frameIdx, previewJpeg, pw, ph ) )
+    {
+        //预览生成成功
+    }
+    else
+    {
+        previewJpeg.clear();
+    }
+
+    //Phase 2b: 写头 + raw + 预览
+    QByteArray outNative = outPath.toLocal8Bit();
+    const int write_rc = dngWriteFrame(
+                             dng, ( char* )outNative.data(),
+                             previewJpeg.isEmpty() ? NULL : ( const uint8_t* )previewJpeg.constData(),
+                             previewJpeg.isEmpty() ? 0 : ( size_t )previewJpeg.size() );
+
+    freeDngObject( dng );
+
+    //恢复用户原有的 DualISO 设置（不影响界面状态）
+    llrpSetDualIsoMode( m_pMlvObject, savedDualMode );
+    llrpSetFixRawMode( m_pMlvObject, savedFixRaw );
+    m_pMlvObject->llrawproc->diso_validity = savedDisoVal;
+
+    return ( prepare_rc == 0 && write_rc == 0 && QFile::exists( outPath ) );
+}
+
+//「导出当前帧」：按设置导出当前素材
+void MainWindow::exportCurrentFrameWithSettings( ImageExportDialog &dlg, const QString &outDir )
+{
+    if( m_pMlvObject == nullptr )
+    {
+        // 兜底：照片素材用预览图导出
+        QString fallbackPath = outDir + "/export_frame";
+        bool done = false;
+        if( SESSION_ACTIVE_CLIP_ROW >= 0 && SESSION_ACTIVE_CLIP_ROW < SESSION_CLIP_COUNT )
+        {
+            ClipInformation *ci = m_pModel->clip( SESSION_ACTIVE_CLIP_ROW );
+            if( ci && ci->isImageClip() )
+            {
+                // 用源文件直接解码（照片）
+                QImage src( ci->getPath() );
+                if( !src.isNull() )
+                {
+                    const int fmt = dlg.imageFormat();
+                    if( fmt == 3 )
+                    {
+                        QMessageBox::information( this, APPNAME,
+                            tr( "DNG has to be generated from a raw frame, and this clip has no usable raw data.\nPlease export as JPG/PNG/TIFF instead." ) );
+                        return;
+                    }
+                    const char *ext = ( fmt == 1 ) ? "png" : ( fmt == 2 ? "tif" : "jpg" );
+                    fallbackPath = QString( "%1/%2.%3" )
+                                       .arg( outDir )
+                                       .arg( QFileInfo( ci->getPath() ).completeBaseName() )
+                                       .arg( QString::fromLatin1( ext ) );
+                    done = saveImageWithSettings( src, fallbackPath,
+                                                  fmt, dlg.jpgQuality(),
+                                                  dlg.scalePercent(), dlg.customWidth(),
+                                                  dlg.watermarkEnabled(), dlg.watermarkText(),
+                                                  dlg.watermarkSize(), dlg.watermarkOpacity(), dlg.watermarkCorner(),
+                                                  dlg.colorSpace() );
+                    if( done && dlg.keepExif() ) copyExifFrom( ci->getPath(), fallbackPath );
+                }
+            }
+        }
+        if( done )
+            QMessageBox::information( this, APPNAME, tr( "Export finished.\n%1" ).arg( fallbackPath ) );
+        else
+            QMessageBox::information( this, APPNAME, tr( "This clip has no frame to export." ) );
+        return;
+    }
+
+    const int w = getMlvWidth( m_pMlvObject );
+    const int h = getMlvHeight( m_pMlvObject );
+    uint8_t *rgb = ( uint8_t* )malloc( ( size_t )w * ( size_t )h * 3 );
+    if( rgb == nullptr )
+    {
+        QMessageBox::warning( this, APPNAME, tr( "Not enough memory to export." ) );
+        return;
+    }
+
+    const int frameNo = ui->horizontalSliderPosition->value();
+    getMlvProcessedFrame8( m_pMlvObject, frameNo, rgb, QThread::idealThreadCount() );
+
+    QImage img( ( const uchar* )rgb, w, h, w * 3, QImage::Format_RGB888 );
+    free( rgb );
+    if( img.isNull() )
+    {
+        QMessageBox::warning( this, APPNAME, tr( "Frame decoding failed." ) );
+        return;
+    }
+
+    const int fmt = dlg.imageFormat();
+
+    //DNG：走 RAW 层（包含 DualISO 合并，去掉双感光度条纹），不经过彩色处理
+    if( fmt == 3 )
+    {
+        QString dngStem;
+        if( ACTIVE_RECEIPT ) dngStem = QFileInfo( ACTIVE_RECEIPT->fileName() ).completeBaseName();
+        if( dngStem.isEmpty() ) dngStem = "frame";
+        const int namingD = dlg.namingRule();
+        if( namingD == 2 ) dngStem = QString( "%1_%2" ).arg( dlg.namePrefix() ).arg( frameNo + 1, 4, 10, QChar( '0' ) );
+        else if( namingD == 1 ) dngStem = QString( "%1_%2" ).arg( dngStem ).arg( frameNo + 1, 4, 10, QChar( '0' ) );
+
+        const QString dngPath = QString( "%1/%2.dng" ).arg( outDir ).arg( dngStem );
+        if( exportDngFrame( dngPath, frameNo ) )
+            QMessageBox::information( this, APPNAME,
+                tr( "Export finished (DNG raw, dual-ISO merged).\n%1\n\nNote: DNG stores raw data with no exposure/white-balance grading - continue colour work in Lightroom or DaVinci Resolve." ).arg( dngPath ) );
+        else
+            QMessageBox::warning( this, APPNAME, tr( "DNG export failed: %1" ).arg( dngPath ) );
+        return;
+    }
+
+    const char *ext = ( fmt == 1 ) ? "png" : ( fmt == 2 ? "tif" : "jpg" );
+
+    // 命名规则
+    QString stem;
+    if( ACTIVE_RECEIPT ) stem = QFileInfo( ACTIVE_RECEIPT->fileName() ).completeBaseName();
+    if( stem.isEmpty() ) stem = "frame";
+    const int naming = dlg.namingRule();
+    if( naming == 2 ) stem = QString( "%1_%2" ).arg( dlg.namePrefix() ).arg( frameNo + 1, 4, 10, QChar( '0' ) );
+    else if( naming == 1 ) stem = QString( "%1_%2" ).arg( stem ).arg( frameNo + 1, 4, 10, QChar( '0' ) );
+
+    const QString outPath = QString( "%1/%2.%3" ).arg( outDir ).arg( stem ).arg( QString::fromLatin1( ext ) );
+
+    const bool ok = saveImageWithSettings( img, outPath,
+                                           dlg.imageFormat(), dlg.jpgQuality(),
+                                           dlg.scalePercent(), dlg.customWidth(),
+                                           dlg.watermarkEnabled(), dlg.watermarkText(),
+                                           dlg.watermarkSize(), dlg.watermarkOpacity(), dlg.watermarkCorner(),
+                                           dlg.colorSpace() );
+
+    // EXIF 保留：从原始素材抄 EXIF
+    QString exifNote;
+    if( ok && dlg.keepExif() )
+    {
+        QString srcMedia;
+        if( SESSION_ACTIVE_CLIP_ROW >= 0 && SESSION_ACTIVE_CLIP_ROW < SESSION_CLIP_COUNT )
+        {
+            ClipInformation *ci2 = m_pModel->clip( SESSION_ACTIVE_CLIP_ROW );
+            if( ci2 ) srcMedia = ci2->getPath();
+        }
+        if( !copyExifFrom( srcMedia, outPath ) )
+            exifNote = tr( "\n\n(Note: original EXIF could not be written - make sure exiftool.exe sits next to the app or in I:/AI_Tools/cr2hdr)" );
+    }
+
+    if( ok )
+        QMessageBox::information( this, APPNAME, tr( "Export finished.\n%1%2" ).arg( outPath ).arg( exifNote ) );
+    else
+        QMessageBox::warning( this, APPNAME, tr( "Export failed: %1" ).arg( outPath ) );
+}
+
+//图片自动批量导出：先弹导出设置窗口，再选目标文件夹
+void MainWindow::exportImagesAuto()
+{
+    if( SESSION_CLIP_COUNT <= 0 )
+    {
+        QMessageBox::information( this, APPNAME, tr( "Please import media first." ) );
+        return;
+    }
+
+    //① 收集目标行
+    QVector<int> rows;
+    QModelIndexList sel = selectedClipsList();
+    if( sel.isEmpty() )
+    {
+        for( int k = 0; k < SESSION_CLIP_COUNT; k++ ) rows.append( k );
+    }
+    else
+    {
+        for( int k = 0; k < sel.size(); k++ )
+        {
+            const int r = m_pProxyModel->mapToSource( sel.at( k ) ).row();
+            if( r >= 0 && !rows.contains( r ) ) rows.append( r );
+        }
+    }
+
+    QVector<int> imgRows;
+    for( int k = 0; k < rows.size(); k++ )
+    {
+        ClipInformation *c = m_pModel->clip( rows.at( k ) );
+        if( c && c->isImageClip() ) imgRows.append( rows.at( k ) );
+    }
+    if( imgRows.isEmpty() )
+    {
+        QMessageBox::information( this, APPNAME,
+            tr( "The selection contains no photos." ) );
+        return;
+    }
+
+    //② 弹图片导出设置（格式/画质/分辨率/目录）
+    ImageExportDialog dlg( this );
+    // ★ 输出目录默认：原素材所在文件夹
+    QString srcDir2;
+    if( !imgRows.isEmpty() )
+    {
+        ClipInformation *c0 = m_pModel->clip( imgRows.first() );
+        if( c0 ) srcDir2 = QFileInfo( c0->getPath() ).absolutePath();
+    }
+    if( !srcDir2.isEmpty() && QDir( srcDir2 ).exists() )
+    {
+        //把源目录交给对话框：勾选「输出到源文件夹」时自动填入并锁定
+        dlg.setSourceDir( srcDir2 );
+    }
+    if( !dlg.outputDir().isEmpty() )
+    {
+        // 界面上已有用户上次选的路径，保留
+    }
+    else if( !m_lastExportPath.isEmpty() )
+    {
+        dlg.setOutputDir( m_lastExportPath );
+    }
+    if( dlg.exec() != QDialog::Accepted ) return;
+
+    QString dir = dlg.outputDir();
+    if( dir.isEmpty() )
+    {
+        dir = QFileDialog::getExistingDirectory( this, tr( "Choose a folder for the exported images" ),
+                                                m_lastExportPath, QFileDialog::ShowDirsOnly );
+        if( dir.isEmpty() ) return;
+    }
+    m_lastExportPath = dir;
+
+    //设置参数
+    const int fmt       = dlg.imageFormat();     // 0=JPG 1=PNG 2=TIFF
+    const int quality   = dlg.jpgQuality();
+    const int scalePct  = dlg.scalePercent();    // 100/75/50/25/0
+    const int customW   = dlg.customWidth();
+    const char *outExt  = ( fmt == 3 ) ? "dng" : ( ( fmt == 1 ) ? "png" : ( fmt == 2 ? "tif" : "jpg" ) );
+
+    const int keepRow = SESSION_ACTIVE_CLIP_ROW;
+
+    QProgressDialog prog( tr( "Exporting images..." ), tr( "Cancel" ), 0, imgRows.size(), this );
+    prog.setWindowTitle( tr( "Export images" ) );
+    prog.setWindowModality( Qt::WindowModal );
+    prog.setMinimumDuration( 0 );
+    prog.show();
+
+    int done = 0, failed = 0;
+    for( int k = 0; k < imgRows.size(); k++ )
+    {
+        if( prog.wasCanceled() ) break;
+        const int row = imgRows.at( k );
+        prog.setLabelText( tr( "Exporting %1 / %2: %3" )
+                             .arg( k + 1 ).arg( imgRows.size() )
+                             .arg( m_pModel->clip( row )->getName() ) );
+        prog.setValue( k );
+        QApplication::processEvents();
+
+        if( SESSION_ACTIVE_CLIP_ROW != row )
+        {
+            if( ACTIVE_RECEIPT && !ACTIVE_RECEIPT->wasNeverLoaded() ) setReceipt( ACTIVE_RECEIPT );
+            showFileInEditor( row );
+            qApp->processEvents();
+        }
+        if( m_pMlvObject == nullptr ) { failed++; continue; }
+
+        //DNG：走 RAW 层（含 DualISO 合并），不做 RGB 渲染、不加水印
+        if( fmt == 3 )
+        {
+            QString stemD = m_pModel->clip( row )->getName();
+            stemD.replace( ".MLV", "", Qt::CaseInsensitive );
+            stemD.replace( ".mlv", "", Qt::CaseInsensitive );
+            stemD.replace( ".CR2", "", Qt::CaseInsensitive );
+            stemD.replace( ".cr2", "", Qt::CaseInsensitive );
+            stemD.replace( ".DNG", "", Qt::CaseInsensitive );
+            stemD.replace( ".dng", "", Qt::CaseInsensitive );
+            const int namingD2 = dlg.namingRule();
+            if( namingD2 == 2 )
+                stemD = QString( "%1_%2" ).arg( dlg.namePrefix() ).arg( k + 1, 4, 10, QChar( '0' ) );
+            else if( namingD2 == 1 )
+                stemD = QString( "%1_%2" ).arg( stemD ).arg( k + 1, 4, 10, QChar( '0' ) );
+
+            const QString dngPath2 = QString( "%1/%2.dng" ).arg( dir ).arg( stemD );
+            if( exportDngFrame( dngPath2, 0 ) ) done++;
+            else failed++;
+            continue;
+        }
+
+        const int w = getMlvWidth( m_pMlvObject );
+        const int hh = getMlvHeight( m_pMlvObject );
+        uint8_t *rgb = ( uint8_t* )malloc( ( size_t )w * ( size_t )hh * 3 );
+        if( rgb == nullptr ) { failed++; continue; }
+
+        getMlvProcessedFrame8( m_pMlvObject, 0, rgb, QThread::idealThreadCount() );
+
+        QString stem = m_pModel->clip( row )->getName();
+        stem.replace( ".MLV", "", Qt::CaseInsensitive );
+        stem.replace( ".mlv", "", Qt::CaseInsensitive );
+        stem.replace( ".CR2", "", Qt::CaseInsensitive );
+        stem.replace( ".cr2", "", Qt::CaseInsensitive );
+        stem.replace( ".DNG", "", Qt::CaseInsensitive );
+        stem.replace( ".dng", "", Qt::CaseInsensitive );
+        // 命名规则
+        const int naming = dlg.namingRule();
+        if( naming == 2 )
+            stem = QString( "%1_%2" ).arg( dlg.namePrefix() ).arg( k + 1, 4, 10, QChar( '0' ) );
+        else if( naming == 1 )
+            stem = QString( "%1_%2" ).arg( stem ).arg( k + 1, 4, 10, QChar( '0' ) );
+
+        const QString outPath = QString( "%1/%2.%3" )
+                                  .arg( dir ).arg( stem ).arg( QString::fromLatin1( outExt ) );
+
+        QImage img( ( const uchar* )rgb, w, hh, w * 3, QImage::Format_RGB888 );
+        //分辨率：100% 原寸寸；自定义按宽度等比缩放
+        int targetW = 0;
+        if( scalePct == 0 ) targetW = customW;          //自定义宽度
+        else if( scalePct < 100 ) targetW = w * scalePct / 100;
+        if( targetW > 0 && targetW != w && targetW >= 16 )
+        {
+            img = img.scaledToWidth( targetW, Qt::SmoothTransformation );
+        }
+
+        // 统一保存（含分辨率/画质/水印）
+        const bool ok = saveImageWithSettings( img, outPath,
+                                               fmt, quality, scalePct, customW,
+                                               dlg.watermarkEnabled(), dlg.watermarkText(),
+                                               dlg.watermarkSize(), dlg.watermarkOpacity(), dlg.watermarkCorner(),
+                                               dlg.colorSpace() );
+        free( rgb );
+        if( ok )
+        {
+            done++;
+            // EXIF 保留
+            if( dlg.keepExif() )
+            {
+                ClipInformation *ci3 = m_pModel->clip( row );
+                if( ci3 ) copyExifFrom( ci3->getPath(), outPath );
+            }
+        }
+        else failed++;
+    }
+    prog.setValue( imgRows.size() );
+    prog.close();
+
+    if( keepRow >= 0 && keepRow < SESSION_CLIP_COUNT && keepRow != SESSION_ACTIVE_CLIP_ROW )
+    {
+        if( ACTIVE_RECEIPT && !ACTIVE_RECEIPT->wasNeverLoaded() ) setReceipt( ACTIVE_RECEIPT );
+        showFileInEditor( keepRow );
+    }
+    updateExportButtons();
+
+    QMessageBox::information( this, APPNAME,
+        tr( "Export finished: %1 succeeded, %2 failed.\nOutput folder: %3" )
+            .arg( done ).arg( failed ).arg( dir ) );
+}
+
+void MainWindow::on_actionBatchExportImages_triggered()
+{
+    //Stop playback if active
+    ui->actionPlay->setChecked( false );
+
+    if( SESSION_CLIP_COUNT <= 0 )
+    {
+        QMessageBox::information( this, APPNAME, tr( "Please import media first." ) );
+        return;
+    }
+
+    //收集目标行：有选中就用选中的，否则用全部
+    QVector<int> rows;
+    QModelIndexList sel = selectedClipsList();
+    if( sel.isEmpty() )
+    {
+        for( int i = 0; i < SESSION_CLIP_COUNT; i++ ) rows.append( i );
+    }
+    else
+    {
+        for( int k = 0; k < sel.size(); k++ )
+        {
+            const int r = m_pProxyModel->mapToSource( sel.at( k ) ).row();
+            if( r >= 0 && !rows.contains( r ) ) rows.append( r );
+        }
+    }
+
+    //只保留照片素材
+    QVector<int> imgRows;
+    for( int k = 0; k < rows.size(); k++ )
+    {
+        ClipInformation *c = m_pModel->clip( rows.at( k ) );
+        if( c && c->isImageClip() ) imgRows.append( rows.at( k ) );
+    }
+    if( imgRows.isEmpty() )
+    {
+        QMessageBox::information( this, APPNAME,
+            tr( "The selection contains no photos.\n(Photos are clips imported from CR2/DNG; for video use \"Export current frame\".)" ) );
+        return;
+    }
+
+    //选输出文件夹
+    QString dir = QFileDialog::getExistingDirectory( this, tr( "Choose a folder for the exported images" ),
+                                                    m_lastExportPath, QFileDialog::ShowDirsOnly );
+    if( dir.isEmpty() ) return;
+    m_lastExportPath = dir;
+
+    const int keepRow = SESSION_ACTIVE_CLIP_ROW;
+
+    QProgressDialog prog( tr( "Exporting images..." ), tr( "Cancel" ), 0, imgRows.size(), this );
+    prog.setWindowTitle( tr( "Batch export images" ) );
+    prog.setWindowModality( Qt::WindowModal );
+    prog.setMinimumDuration( 0 );
+    prog.show();
+
+    int done = 0, failed = 0;
+    for( int k = 0; k < imgRows.size(); k++ )
+    {
+        if( prog.wasCanceled() ) break;
+
+        const int row = imgRows.at( k );
+        prog.setLabelText( tr( "Exporting %1 / %2: %3" )
+                             .arg( k + 1 ).arg( imgRows.size() )
+                             .arg( m_pModel->clip( row )->getName() ) );
+        prog.setValue( k );
+        QApplication::processEvents();
+
+        //把该素材切到编辑器，取它已完成调色的画面
+        if( SESSION_ACTIVE_CLIP_ROW != row )
+        {
+            if( ACTIVE_RECEIPT && !ACTIVE_RECEIPT->wasNeverLoaded() ) setReceipt( ACTIVE_RECEIPT );
+            showFileInEditor( row );
+            qApp->processEvents();
+        }
+        if( m_pMlvObject == nullptr ) { failed++; continue; }
+
+        const int w = getMlvWidth( m_pMlvObject );
+        const int h = getMlvHeight( m_pMlvObject );
+        uint8_t *rgb = ( uint8_t* )malloc( ( size_t )w * ( size_t )h * 3 );
+        if( rgb == nullptr ) { failed++; continue; }
+
+        getMlvProcessedFrame8( m_pMlvObject, 0, rgb, QThread::idealThreadCount() );
+
+        QString stem = m_pModel->clip( row )->getName();
+        stem.replace( ".MLV", "", Qt::CaseInsensitive );
+        stem.replace( ".mlv", "", Qt::CaseInsensitive );
+        //（旧批量函数，已从工具栏移除，保留兜底路径）
+        const QString outPath = QString( "%1/%2.jpg" ).arg( dir ).arg( stem );
+
+        const bool ok = QImage( ( const uchar* )rgb, w, h, w * 3, QImage::Format_RGB888 )
+                          .save( outPath, "jpg", 95 );
+        free( rgb );
+        if( ok ) done++; else failed++;
+    }
+    prog.setValue( imgRows.size() );
+    prog.close();
+
+    //切回原来的素材
+    if( keepRow >= 0 && keepRow < SESSION_CLIP_COUNT && keepRow != SESSION_ACTIVE_CLIP_ROW )
+    {
+        if( ACTIVE_RECEIPT && !ACTIVE_RECEIPT->wasNeverLoaded() ) setReceipt( ACTIVE_RECEIPT );
+        showFileInEditor( keepRow );
+    }
+    updateExportButtons();
+
+    QMessageBox::information( this, APPNAME,
+        tr( "Batch export finished: %1 succeeded, %2 failed.\nOutput folder: %3" )
+            .arg( done ).arg( failed ).arg( dir ) );
 }
 
 //Enable / Disable the highlight reconstruction
@@ -7260,7 +8672,7 @@ void MainWindow::resultingResolution( void )
     if( !SESSION_CLIP_COUNT ) return;
     int x = getMlvWidth( m_pMlvObject ) * getHorizontalStretchFactor( false );
     int y = getMlvHeight( m_pMlvObject ) * getVerticalStretchFactor( false );
-    ui->label_resResolution->setText( QString( "%1 x %2 pixels" ).arg(x).arg(y) );
+    ui->label_resResolution->setText( tr( "%1 x %2 pixels" ).arg(x).arg(y) );
 }
 
 //Is the current export setting set to sequnce?
@@ -7508,6 +8920,111 @@ void MainWindow::on_actionResetReceipt_triggered()
     delete receipt;
 }
 
+//AI 语言调色（挂点：编辑菜单 actionAiGrading，设计见 reports/D4_ai_grading_panel_design.md §3.3）
+void MainWindow::on_actionAiGrading_triggered()
+{
+    // 空 session 时 pRec 会取 activeRow()==-1 越界（实测 0xC0000005 崩溃），
+    // 这里先做空安全取值：没素材就传 nullptr（AiGradingDialog 内部对 null 有保护）
+    ReceiptSettings *pRec = ( m_pModel && m_pModel->rowCount( QModelIndex() ) > 0 )
+                            ? m_pModel->receipt( m_pModel->activeRow() ) : nullptr;
+    //不再依赖素材是否已加载：面板是常驻 UI，没素材也要能打开
+    //（旧版在此处 return 导致面板永远不建，分组展开后为空 —— 已修）
+
+    if( !m_pAiGradingPanel )
+    {
+        // 面板常驻右侧栏：只建一次，之后靠 setContext() 跟随素材切换
+        m_pAiGradingPanel = new AiGradingDialog( ui->dockWidgetEdit, pRec, m_pProcessingObject );
+        connect( m_pAiGradingPanel, SIGNAL(receiptWasChanged()), this, SLOT(onAiGradingReceiptChanged()) );
+
+        // 嵌进侧边栏的「AI 智能调色」分组
+        ui->verticalLayoutAiGradingHost->addWidget( m_pAiGradingPanel );
+    }
+    else
+    {
+        // 已建过：保证 receipt 反映当前滑块真实值（temperature=-1 等未初始化字段的兜底）
+        if( pRec ) setReceipt( pRec );
+        m_pAiGradingPanel->setContext( pRec, m_pProcessingObject );
+    }
+
+    // 菜单：点一下就打开面板（不再做开/关切换，开关交给珜选分组）
+    ui->dockWidgetEdit->show();
+    ui->dockWidgetEdit->raise();
+
+    //先显示分组和内容框
+    ui->groupBoxAiGrading->setVisible( true );
+    ui->groupBoxAiGrading->setMaximumHeight( 16777215 );
+    ui->frameAiGrading->setVisible( true );
+    m_pAiGradingPanel->setVisible( true );
+
+    //再同步勾选状态（用 blockSignals 避免反复触发 toggled）
+    ui->groupBoxAiGrading->blockSignals( true );
+    ui->groupBoxAiGrading->setChecked( true );
+    ui->groupBoxAiGrading->blockSignals( false );
+    ui->actionAiGrading->setChecked( true );
+
+    m_frameChanged = true;
+}
+
+//AI 调色对话框应用/撤销后的 MainWindow 接手：灌滑块 + 同步处理链 + 重绘
+void MainWindow::onAiGradingReceiptChanged()
+{
+    setSliders( ACTIVE_RECEIPT, true );
+    m_frameChanged = true;
+}
+
+//「AI 智能调色 → LLM 设置…」：独立弹窗编辑通道参数
+void MainWindow::on_actionAiLlmSettings_triggered()
+{
+    LlmSettingsDialog dlg( this );
+    if( dlg.exec() == QDialog::Accepted )
+    {
+        if( m_pAiGradingPanel )
+        {
+            m_pAiGradingPanel->reloadLlmSettings();
+        }
+    }
+}
+
+//「AI 智能调色」分组的折叠/展开
+void MainWindow::on_groupBoxAiGrading_toggled( bool arg1 )
+{
+    // 空 session 时 pRec = m_pModel->receipt(activeRow()) 会越界（0xC0000005），
+    // 无素材勾选这个分组同样会崩，这里统一做空安全取值
+    ReceiptSettings *pRec = ( m_pModel && m_pModel->rowCount( QModelIndex() ) > 0 )
+                            ? m_pModel->receipt( m_pModel->activeRow() ) : nullptr;
+    ui->frameAiGrading->setVisible( arg1 );
+    if( !arg1 )
+    {
+        //取消勾选：整个分组从侧栏里消失（不只是缩高度）
+        if( m_pAiGradingPanel ) m_pAiGradingPanel->setVisible( false );
+        ui->groupBoxAiGrading->setVisible( false );
+        ui->actionAiGrading->setChecked( false );
+    }
+    else
+    {
+        //勾选：分组重新出现 + 整个面板展开
+        ui->groupBoxAiGrading->setVisible( true );
+        ui->groupBoxAiGrading->setMaximumHeight( 16777215 );
+        ui->actionAiGrading->setChecked( true );
+        if( !m_pAiGradingPanel )
+        {
+            //★ 千万不能调 on_actionAiGrading_triggered()：
+            //   那个槽里会 groupBox->setChecked() -> 反复触发 toggled -> 回到这里 -> 无限递归崩溃
+            //   这里直接把面板建出来并塞进分组
+            m_pAiGradingPanel = new AiGradingDialog( ui->dockWidgetEdit, pRec, m_pProcessingObject );
+            connect( m_pAiGradingPanel, SIGNAL(receiptWasChanged()), this, SLOT(onAiGradingReceiptChanged()) );
+            ui->verticalLayoutAiGradingHost->addWidget( m_pAiGradingPanel );
+            m_pAiGradingPanel->setVisible( true );
+        }
+        else
+        {
+            if( pRec ) setReceipt( pRec );
+            m_pAiGradingPanel->setContext( pRec, m_pProcessingObject );
+            m_pAiGradingPanel->setVisible( true );
+        }
+    }
+}
+
 //Copy receipt to clipboard
 void MainWindow::on_actionCopyRecept_triggered()
 {
@@ -7745,10 +9262,10 @@ void MainWindow::on_listViewSession_customContextMenuRequested(const QPoint &pos
         if( list.size() == 1 )
         {
             myMenu.addAction( ui->actionSelectAllClips );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Image-icon.png" ), "Show in Editor",  this, SLOT( rightClickShowFile() ) );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), "Delete Selected File from Session",  this, SLOT( deleteFileFromSession() ) );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Image-icon.png" ), tr( "Show in Editor" ),  this, SLOT( rightClickShowFile() ) );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), tr( "Delete Selected File from Session" ),  this, SLOT( deleteFileFromSession() ) );
             myMenu.addAction( ui->actionRename );
-            markMenu.setTitle( "Mark Clip" );
+            markMenu.setTitle( tr( "Mark Clip" ) );
             myMenu.addMenu( &markMenu );
             myMenu.addSeparator();
             myMenu.addAction( ui->actionShowInFinder );
@@ -7759,8 +9276,8 @@ void MainWindow::on_listViewSession_customContextMenuRequested(const QPoint &pos
         else if( list.size() > 1 )
         {
             myMenu.addAction( ui->actionPasteReceipt );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), "Delete Selected Files from Session",  this, SLOT( deleteFileFromSession() ) );
-            markMenu.setTitle( "Mark Clips" );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), tr( "Delete Selected Files from Session" ),  this, SLOT( deleteFileFromSession() ) );
+            markMenu.setTitle( tr( "Mark Clips" ) );
             myMenu.addMenu( &markMenu );
             myMenu.addSeparator();
         }
@@ -7791,10 +9308,10 @@ void MainWindow::on_tableViewSession_customContextMenuRequested(const QPoint &po
         if( list.size() == 1 )
         {
             myMenu.addAction( ui->actionSelectAllClips );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Image-icon.png" ), "Show in Editor",  this, SLOT( rightClickShowFile() ) );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), "Delete Selected File from Session",  this, SLOT( deleteFileFromSession() ) );
-            myMenu.addAction( "Rename", this, SLOT( renameActiveClip() ) );
-            markMenu.setTitle( "Mark Clip" );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Image-icon.png" ), tr( "Show in Editor" ),  this, SLOT( rightClickShowFile() ) );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), tr( "Delete Selected File from Session" ),  this, SLOT( deleteFileFromSession() ) );
+            myMenu.addAction( tr( "Rename" ), this, SLOT( renameActiveClip() ) );
+            markMenu.setTitle( tr( "Mark Clip" ) );
             myMenu.addMenu( &markMenu );
             myMenu.addSeparator();
             myMenu.addAction( ui->actionShowInFinder );
@@ -7805,8 +9322,8 @@ void MainWindow::on_tableViewSession_customContextMenuRequested(const QPoint &po
         else if( list.size() > 1 )
         {
             myMenu.addAction( ui->actionPasteReceipt );
-            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), "Delete Selected Files from Session",  this, SLOT( deleteFileFromSession() ) );
-            markMenu.setTitle( "Mark Clips" );
+            myMenu.addAction( QIcon( ":/RetinaIMG/RetinaIMG/Delete-icon.png" ), tr( "Delete Selected Files from Session" ),  this, SLOT( deleteFileFromSession() ) );
+            markMenu.setTitle( tr( "Mark Clips" ) );
             myMenu.addMenu( &markMenu );
             myMenu.addSeparator();
         }
@@ -8713,8 +10230,8 @@ void MainWindow::toolButtonBadPixelsChanged( void )
     ui->toolButtonBadPixelsCrosshairEnable->setVisible( index >= 3 );
     ui->toolButtonBadPixelsSearchMethodNormal->setVisible( index < 3 );
     ui->toolButtonBadPixelsSearchMethodAggressive->setVisible( index < 3 );
-    if( index < 3 ) ui->FocusPixelsInterpolationMethodLabel_2->setText( "Search Method" );
-    else ui->FocusPixelsInterpolationMethodLabel_2->setText( "Edit" );
+    if( index < 3 ) ui->FocusPixelsInterpolationMethodLabel_2->setText( tr( "Search Method" ) );
+    else ui->FocusPixelsInterpolationMethodLabel_2->setText( tr( "Edit" ) );
 
     llrpResetBpmStatus(m_pMlvObject);
     resetMlvCache( m_pMlvObject );
@@ -10319,7 +11836,7 @@ void MainWindow::on_lineEditDarkFrameFile_textChanged(const QString &arg1)
 #ifdef Q_OS_UNIX
         QByteArray darkFrameFileName = arg1.toUtf8();
 #else
-        QByteArray darkFrameFileName = arg1.toLatin1();
+        QByteArray darkFrameFileName = arg1.toLocal8Bit();
 #endif
 
         char errorMessage[256] = { 0 };
@@ -10327,7 +11844,7 @@ void MainWindow::on_lineEditDarkFrameFile_textChanged(const QString &arg1)
         if( ret )
         {
             QMessageBox::critical( this, tr( "Error" ), tr( "%1" ).arg( errorMessage ), QMessageBox::Cancel, QMessageBox::Cancel );
-            ui->lineEditDarkFrameFile->setText( "No file selected" );
+            ui->lineEditDarkFrameFile->setText( tr( "No file selected" ) );
             return;
         }
         else if( !ret && errorMessage[0] )
@@ -10466,7 +11983,7 @@ void MainWindow::on_lineEditLutName_textChanged(const QString &arg1)
 #ifdef Q_OS_UNIX
         QByteArray lutName = arg1.toUtf8();
 #else
-        QByteArray lutName = arg1.toLatin1();
+        QByteArray lutName = arg1.toLocal8Bit();
 #endif
         char errorMessage[256] = { 0 };
         int ret = load_lut( m_pProcessingObject->lut, lutName.data(), errorMessage );
@@ -10504,6 +12021,70 @@ void MainWindow::on_actionHelp_triggered()
     delete help;
 }
 
+
+//功能导览：帮助 → 功能导览（coach mark：遮罩 + 挖洞高亮 + 气泡）
+void MainWindow::on_actionTour_triggered()
+{
+    if( m_pTourOverlay ) return;             // 已开着就不叠第二个遮罩
+
+    m_tourAiPanelWasVisible = ( m_pAiGradingPanel && m_pAiGradingPanel->isVisible() );
+
+    m_pTourOverlay = new GuidedTourOverlay( this );
+    connect( m_pTourOverlay, SIGNAL( stepAboutToShow(int) ), this, SLOT( tourStepAboutToShow(int) ) );
+    connect( m_pTourOverlay, SIGNAL( tourFinished() ), this, SLOT( tourFinished() ) );
+    if( g_tourStartStep > 1 ) m_pTourOverlay->startAt( g_tourStartStep - 1 );   // --tour-test=N 直接跳步
+    else                      m_pTourOverlay->start();
+}
+
+//导览进入某步之前：AI 相关的三步要保证右侧 AI 面板已创建并可见，否则目标控件不存在
+void MainWindow::tourStepAboutToShow( int index )
+{
+    // 空 session 时 pRec 会取 activeRow()==-1 越界（实测 0xC0000005 崩溃），
+    // 这里先做空安全取值：没素材就传 nullptr（AiGradingDialog 内部对 null 有保护）
+    ReceiptSettings *pRec = ( m_pModel && m_pModel->rowCount( QModelIndex() ) > 0 )
+                            ? m_pModel->receipt( m_pModel->activeRow() ) : nullptr;
+    // 第 7~10 步 = AI 面板入口 / 指令框 / 生成 / 应用：这几步都必须保证面板是开着的，
+    // 否则后面三步的 target（面板内控件）永远定位不到。
+    if( index < 6 || index > 9 ) return;
+    // 不再要求已加载素材：面板是常驻 UI，导览要能空演示
+    //（与 on_actionAiGrading_triggered 的口径一致：没素材也要能打开）
+
+    //注意：不能复用 on_actionAiGrading_triggered()，那个槽是显示/隐藏开关语义
+    if( !m_pAiGradingPanel )
+    {
+        m_pAiGradingPanel = new AiGradingDialog( ui->dockWidgetEdit, pRec, m_pProcessingObject );
+        m_pAiGradingPanel->setContext( pRec, m_pProcessingObject );
+        connect( m_pAiGradingPanel, SIGNAL(receiptWasChanged()), this, SLOT(onAiGradingReceiptChanged()) );
+
+        ui->verticalLayoutAiGradingHost->addWidget( m_pAiGradingPanel );
+    }
+
+    ui->dockWidgetEdit->show();
+    ui->dockWidgetEdit->raise();
+    ui->groupBoxAiGrading->setChecked( true );
+    ui->frameAiGrading->setVisible( true );
+    ui->groupBoxAiGrading->setMaximumHeight( 16777215 );
+    m_pAiGradingPanel->setVisible( true );
+    ui->actionAiGrading->setChecked( true );
+    qApp->processEvents();
+}
+
+//导览结束（完成或跳过）：恢复 AI 面板原来的可见状态，并回收遮罩
+void MainWindow::tourFinished()
+{
+    if( m_pAiGradingPanel && !m_tourAiPanelWasVisible )
+    {
+        m_pAiGradingPanel->setVisible( false );
+        ui->actionAiGrading->setChecked( false );
+        m_frameChanged = true;
+    }
+
+    if( m_pTourOverlay )
+    {
+        m_pTourOverlay->deleteLater();
+        m_pTourOverlay = nullptr;
+    }
+}
 //"one of the most important features": creating batch MAPP files
 void MainWindow::on_actionCreateAllMappFilesNow_triggered()
 {
@@ -10516,7 +12097,7 @@ void MainWindow::on_actionCreateAllMappFilesNow_triggered()
     setEnabled( false );
 
     m_pStatusDialog->setEnabled( true );
-    m_pStatusDialog->ui->label->setText( "Creating MAPP files..." );
+    m_pStatusDialog->ui->label->setText( tr( "Creating MAPP files..." ) );
     m_pStatusDialog->ui->labelEstimatedTime->setText( "" );
     m_pStatusDialog->ui->progressBar->setValue( 0 );
     m_pStatusDialog->ui->pushButtonAbort->setVisible( false );
@@ -10816,6 +12397,97 @@ void MainWindow::on_actionTranscodeAndImport_triggered()
     delete pTranscode;
 }
 
+//Left sidebar card: Import MLV video files
+void MainWindow::on_cardMlvVideo_clicked()
+{
+    ui->actionOpen->trigger();
+}
+
+//Left sidebar card: Import CR2 photos (direct, no TranscodeDialog)
+  void MainWindow::on_cardCr2Photo_clicked()
+  {
+      //Build RAW file filter (same as TranscodeDialog)
+      QStringList fileExt;
+      fileExt << ".cr2" << ".cr3" << ".crf" << ".dng" << ".nef" << ".raw" << ".sr2" << ".srf" << ".nrw" << ".arw";
+      QString filter = "RAW images (";
+      foreach( QString fext, fileExt ) { filter.append( QString( "*%1 " ).arg( fext ) ); }
+      filter.chop(1);
+      filter.append( ")" );
+
+      //Step 1: Select RAW files
+      QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+      QString lastSourcePath = set.value( "lastTranscodeSourcePath", QDir::homePath() ).toString();
+      QStringList files = QFileDialog::getOpenFileNames( this, tr("Select CR2/RAW photos to import"), lastSourcePath, filter );
+      if( files.empty() ) return;
+      set.setValue( "lastTranscodeSourcePath", QFileInfo( files.at(0) ).absolutePath() );
+
+      importRawFiles( files );
+  }
+
+  //Transcode RAW photos to MLV with raw2mlv and open the result.
+  //Shared by the "import CR2 photo" card AND by dropping RAW files on the window.
+  //Destination = the source folder (no second dialog: pick photos -> it opens).
+  void MainWindow::importRawFiles( const QStringList &files )
+  {
+      if( files.empty() ) return;
+
+      QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+      QString destFolder = QFileInfo( files.at(0) ).absolutePath();
+      set.setValue( "lastTranscodeTargetPath", destFolder );
+
+      //Transcode each file with raw2mlv
+      QString raw2mlvCmd = QCoreApplication::applicationDirPath() + "/raw2mlv";
+      #ifdef Q_OS_WIN
+          raw2mlvCmd.append( ".exe" );
+      #endif
+
+      QProgressDialog progress( tr("Transcoding RAW files..."), tr("Cancel"), 0, files.size(), this );
+      progress.setWindowTitle( tr("Import CR2 Photos") );
+      progress.setWindowModality( Qt::WindowModal );
+      progress.setMinimumDuration( 0 );
+      progress.show();
+
+      QStringList mlvList;
+      for( int i = 0; i < files.size(); i++ )
+      {
+          if( progress.wasCanceled() ) break;
+
+          progress.setLabelText( tr("Transcoding %1 / %2: %3").arg(i+1).arg(files.size()).arg( QFileInfo( files.at(i) ).fileName() ) );
+          progress.setValue( i );
+          QApplication::processEvents();
+
+          QString input = files.at(i);
+          QString baseName = QFileInfo( input ).completeBaseName();
+          QString output = destFolder + "/" + baseName + ".MLV";
+
+          QStringList args;
+          args << input << "-o" << output;
+
+          QProcess process;
+          process.execute( raw2mlvCmd, args );
+
+          if( QFile::exists( output ) )
+          {
+              mlvList.append( output );
+          }
+      }
+      progress.setValue( files.size() );
+      progress.close();
+
+      //Step 4: Open the transcoded MLV files
+      if( !mlvList.empty() )
+      {
+          //这些 MLV 是由 CR2/DNG 照片转码而来，标记为「图片」来源
+          m_pendingImportIsImage = true;
+          openMlvSet( mlvList );
+          m_pendingImportIsImage = false;
+      }
+      else
+      {
+          QMessageBox::information( this, APPNAME, tr("No MLV files were created. Check if raw2mlv.exe exists.") );
+      }
+  }
+
 //Set/Reset default receipt
 void MainWindow::on_actionUseDefaultReceipt_triggered(bool checked)
 {
@@ -11105,7 +12777,7 @@ void MainWindow::on_lineEditTransferFunction_textChanged(const QString &arg1)
     processingSetTransferFunction( m_pProcessingObject, arg1.toUtf8().data() );
 #else
     //qDebug() << "Set Transfer function!" <<
-    processingSetTransferFunction( m_pProcessingObject, arg1.toLatin1().data() );
+    processingSetTransferFunction( m_pProcessingObject, arg1.toLocal8Bit().data() );
 #endif
     m_frameChanged = true;
 }

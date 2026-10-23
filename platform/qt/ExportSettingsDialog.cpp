@@ -103,9 +103,9 @@ ExportSettingsDialog::ExportSettingsDialog(QWidget *parent, Scripting *scripting
     ui->checkBoxHdrBlending->setChecked( hdrBlending );
 
     //Disable some options for AVFoundation
-    if( ui->comboBoxOption->currentText() == QString( "Apple AVFoundation" ) )
+    if( ui->comboBoxOption->currentText() == tr( "Apple AVFoundation" ) )
     {
-        on_comboBoxOption_currentTextChanged( QString( "Apple AVFoundation" ) );
+        on_comboBoxOption_currentTextChanged( tr( "Apple AVFoundation" ) );
     }
 
 #ifndef Q_OS_OSX
@@ -238,14 +238,14 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Kostya" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Anatolyi" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Kostya" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Anatolyi" ) );
 #ifdef Q_OS_MACX
 #if MAC_OS_X_VERSION_MIN_REQUIRED < 101300
         if( index == CODEC_PRORES422ST || index == CODEC_PRORES4444 )
         {
 #endif
-            ui->comboBoxOption->addItem( QString( "Apple AVFoundation" ) );
+            ui->comboBoxOption->addItem( tr( "Apple AVFoundation" ) );
 #if MAC_OS_X_VERSION_MIN_REQUIRED < 101300
         }
 #endif
@@ -262,9 +262,9 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "YUV420 8bit" ) );
-        ui->comboBoxOption->addItem( QString( "V210 10bit" ) );
-        ui->comboBoxOption->addItem( QString( "BGR24 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "YUV420 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "V210 10bit" ) );
+        ui->comboBoxOption->addItem( tr( "BGR24 8bit" ) );
     }
     else if( index == CODEC_CDNG
           || index == CODEC_CDNG_LOSSLESS
@@ -273,8 +273,8 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( false );
         ui->comboBoxDebayer->setEnabled( false );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "Default Naming Scheme" ) );
-        ui->comboBoxOption->addItem( QString( "DaVinci Resolve Naming Scheme" ) );
+        ui->comboBoxOption->addItem( tr( "Default Naming Scheme" ) );
+        ui->comboBoxOption->addItem( tr( "DaVinci Resolve Naming Scheme" ) );
         enableResize = false;
     }
     else if( index == CODEC_H264
@@ -285,22 +285,22 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Movie (*.mov) High Quality" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg MPEG-4 (*.mp4) High Quality" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Matroska (*.mkv) High Quality" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Movie (*.mov) Medium Quality" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg MPEG-4 (*.mp4) Medium Quality" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg Matroska (*.mkv) Medium Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Movie (*.mov) High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg MPEG-4 (*.mp4) High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Matroska (*.mkv) High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Movie (*.mov) Medium Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg MPEG-4 (*.mp4) Medium Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg Matroska (*.mkv) Medium Quality" ) );
 #ifdef Q_OS_MACX
         if( index == CODEC_H264 )
         {
-            ui->comboBoxOption->addItem( QString( "Apple AVFoundation" ) );
+            ui->comboBoxOption->addItem( tr( "Apple AVFoundation" ) );
         }
 #endif
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 101300
         if( index == CODEC_H265_8 )
         {
-            ui->comboBoxOption->addItem( QString( "Apple AVFoundation" ) );
+            ui->comboBoxOption->addItem( tr( "Apple AVFoundation" ) );
         }
 #endif
     }
@@ -309,33 +309,33 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "Sequence" ) );
-        ui->comboBoxOption->addItem( QString( "Averaged Frame (max. 128 frames)" ) );
+        ui->comboBoxOption->addItem( tr( "Sequence" ) );
+        ui->comboBoxOption->addItem( tr( "Averaged Frame (max. 128 frames)" ) );
     }
     else if( index == CODEC_PNG )
     {
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "16 bit" ) );
-        ui->comboBoxOption->addItem( QString( "8 bit" ) );
+        ui->comboBoxOption->addItem( tr( "16 bit" ) );
+        ui->comboBoxOption->addItem( tr( "8 bit" ) );
     }
     else if( index == CODEC_JPG2K )
     {
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "Sequence (*.jp2)" ) );
-        ui->comboBoxOption->addItem( QString( "Movie (*.mov)" ) );
+        ui->comboBoxOption->addItem( tr( "Sequence (*.jp2)" ) );
+        ui->comboBoxOption->addItem( tr( "Movie (*.mov)" ) );
     }
     else if( index == CODEC_FFVHUFF )
     {
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "10bit YUV 4:4:4" ) );
-        ui->comboBoxOption->addItem( QString( "12bit YUV 4:4:4" ) );
-        ui->comboBoxOption->addItem( QString( "16bit YUV 4:4:4" ) );
+        ui->comboBoxOption->addItem( tr( "10bit YUV 4:4:4" ) );
+        ui->comboBoxOption->addItem( tr( "12bit YUV 4:4:4" ) );
+        ui->comboBoxOption->addItem( tr( "16bit YUV 4:4:4" ) );
         ui->comboBoxOption->setCurrentIndex( 2 );
     }
     else if( index == CODEC_MLV )
@@ -343,16 +343,16 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( false );
         ui->comboBoxDebayer->setEnabled( false );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "Fast Pass" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Lossless" ) );
-        ui->comboBoxOption->addItem( QString( "Decompress" ) );
-        ui->comboBoxOption->addItem( QString( "Averaged Frame" ) );
-        ui->comboBoxOption->addItem( QString( "Extract Internal Darkframe" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Jpeg2000 Small" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Jpeg2000 Medium" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Jpeg2000 High Quality" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Jpeg2000 Very High Quality" ) );
-        ui->comboBoxOption->addItem( QString( "Compress Jpeg2000 Visually Lossless" ) );
+        ui->comboBoxOption->addItem( tr( "Fast Pass" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Lossless" ) );
+        ui->comboBoxOption->addItem( tr( "Decompress" ) );
+        ui->comboBoxOption->addItem( tr( "Averaged Frame" ) );
+        ui->comboBoxOption->addItem( tr( "Extract Internal Darkframe" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Jpeg2000 Small" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Jpeg2000 Medium" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Jpeg2000 High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Jpeg2000 Very High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "Compress Jpeg2000 Visually Lossless" ) );
         enableResize = false;
     }
     else if( index == CODEC_DNXHD )
@@ -360,10 +360,10 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "1080p 10bit" ) );
-        ui->comboBoxOption->addItem( QString( "1080p 8bit" ) );
-        ui->comboBoxOption->addItem( QString( "720p 10bit" ) );
-        ui->comboBoxOption->addItem( QString( "720p 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "1080p 10bit" ) );
+        ui->comboBoxOption->addItem( tr( "1080p 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "720p 10bit" ) );
+        ui->comboBoxOption->addItem( tr( "720p 8bit" ) );
         enableResize = false;
         QPixmap pic = QPixmap( ":/RetinaIMG/RetinaIMG/Status-dialog-warning-icon.png" ).scaled( 24 * devicePixelRatio(), 24 * devicePixelRatio() );
         pic.setDevicePixelRatio( devicePixelRatio() );
@@ -375,38 +375,38 @@ void ExportSettingsDialog::on_comboBoxCodec_currentIndexChanged(int index)
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "444 10bit" ) );
-        ui->comboBoxOption->addItem( QString( "HQX 10bit" ) );
-        ui->comboBoxOption->addItem( QString( "HQ 8bit" ) );
-        ui->comboBoxOption->addItem( QString( "SQ 8bit" ) );
-        ui->comboBoxOption->addItem( QString( "LB 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "444 10bit" ) );
+        ui->comboBoxOption->addItem( tr( "HQX 10bit" ) );
+        ui->comboBoxOption->addItem( tr( "HQ 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "SQ 8bit" ) );
+        ui->comboBoxOption->addItem( tr( "LB 8bit" ) );
     }
     else if( index == CODEC_CINEFORM_10 || index == CODEC_CINEFORM_12 )
     {
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "Film3+" ) );
-        ui->comboBoxOption->addItem( QString( "Film3" ) );
-        ui->comboBoxOption->addItem( QString( "Film2+" ) );
-        ui->comboBoxOption->addItem( QString( "Film2" ) );
-        ui->comboBoxOption->addItem( QString( "Film1.5" ) );
-        ui->comboBoxOption->addItem( QString( "Film1+" ) );
-        ui->comboBoxOption->addItem( QString( "Film1" ) );
-        ui->comboBoxOption->addItem( QString( "High+" ) );
-        ui->comboBoxOption->addItem( QString( "High" ) );
-        ui->comboBoxOption->addItem( QString( "Medium+" ) );
-        ui->comboBoxOption->addItem( QString( "Medium" ) );
-        ui->comboBoxOption->addItem( QString( "Low+" ) );
-        ui->comboBoxOption->addItem( QString( "Low" ) );
+        ui->comboBoxOption->addItem( tr( "Film3+" ) );
+        ui->comboBoxOption->addItem( tr( "Film3" ) );
+        ui->comboBoxOption->addItem( tr( "Film2+" ) );
+        ui->comboBoxOption->addItem( tr( "Film2" ) );
+        ui->comboBoxOption->addItem( tr( "Film1.5" ) );
+        ui->comboBoxOption->addItem( tr( "Film1+" ) );
+        ui->comboBoxOption->addItem( tr( "Film1" ) );
+        ui->comboBoxOption->addItem( tr( "High+" ) );
+        ui->comboBoxOption->addItem( tr( "High" ) );
+        ui->comboBoxOption->addItem( tr( "Medium+" ) );
+        ui->comboBoxOption->addItem( tr( "Medium" ) );
+        ui->comboBoxOption->addItem( tr( "Low+" ) );
+        ui->comboBoxOption->addItem( tr( "Low" ) );
     }
     else if( index == CODEC_VP9 )
     {
         ui->labelDebayer->setEnabled( true );
         ui->comboBoxDebayer->setEnabled( true );
         ui->comboBoxOption->setEnabled( true );
-        ui->comboBoxOption->addItem( QString( "ffmpeg VP9 (*.webm) Lossless" ) );
-        ui->comboBoxOption->addItem( QString( "ffmpeg VP9 (*.webm) High Quality" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg VP9 (*.webm) Lossless" ) );
+        ui->comboBoxOption->addItem( tr( "ffmpeg VP9 (*.webm) High Quality" ) );
     }
     else if( index == CODEC_AUDIO_ONLY )
     {
@@ -479,7 +479,7 @@ void ExportSettingsDialog::on_checkBoxResize_toggled(bool checked)
 //Disable some options for AVFoundation
 void ExportSettingsDialog::on_comboBoxOption_currentTextChanged(const QString &arg1)
 {
-    if( arg1 == QString( "Apple AVFoundation" ) )
+    if( arg1 == tr( "Apple AVFoundation" ) )
     {
         ui->comboBoxSmoothing->setCurrentIndex( 0 );
         ui->comboBoxSmoothing->setEnabled( false );
@@ -507,7 +507,7 @@ void ExportSettingsDialog::on_comboBoxOption_currentTextChanged(const QString &a
 
         //En-/disable fps override
         if( ( ( ui->comboBoxCodec->currentIndex() == CODEC_JPG2K )
-             && ( arg1 != QString( "Movie (*.mov)" ) ) )
+             && ( arg1 != tr( "Movie (*.mov)" ) ) )
          || ( ui->comboBoxCodec->currentIndex() == CODEC_TIFF )
          || ( ui->comboBoxCodec->currentIndex() == CODEC_PNG ) )
         {
@@ -567,7 +567,7 @@ void ExportSettingsDialog::on_comboBoxSmoothing_currentIndexChanged(int index)
 //Add a new export preset
 void ExportSettingsDialog::on_toolButtonAddPreset_clicked()
 {
-    QListWidgetItem *newItem = new QListWidgetItem( "New Preset" );
+    QListWidgetItem *newItem = new QListWidgetItem( tr( "New Preset" ) );
     newItem->setFlags( newItem->flags() | Qt::ItemIsEditable );
     ui->listWidget->addItem( newItem );
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -578,7 +578,7 @@ void ExportSettingsDialog::on_toolButtonAddPreset_clicked()
     QList<ExportPreset> presetList = set.value( "ExportPresets" ).value<QList<ExportPreset> >();
     //Build new item
     ExportPreset preset;
-    preset.name = "New Preset";
+    preset.name = tr( "New Preset" );
     preset.currentCodecProfile = ui->comboBoxCodec->currentIndex();
     preset.currentCodecOption = ui->comboBoxOption->currentIndex();
     preset.debayerMode = ui->comboBoxDebayer->currentIndex();

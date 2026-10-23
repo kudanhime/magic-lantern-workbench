@@ -8,6 +8,9 @@
 #include "ClipInformation.h"
 #include <QVariant>
 #include <QFileInfo>
+#include <QPainter>
+#include <QPixmap>
+#include <QFont>
 
 //Constructor
 ClipInformation::ClipInformation(QString name,
@@ -45,7 +48,9 @@ ClipInformation::ClipInformation(QString name,
     m_bitDepth( bitDepth ),
     m_dateTime( dateTime ),
     m_audio( audio ),
-    m_backgroundColor( backgroundColor )
+    m_backgroundColor( backgroundColor ),
+    m_sourceType( QString( "video" ) ),
+    m_rating( 0 )
 {
     QPixmap pixmap = QPixmap( 100, 50 );
     pixmap.fill( Qt::black );
@@ -74,7 +79,9 @@ ClipInformation::ClipInformation(QString name,
     m_bitDepth( "-" ),
     m_dateTime( "-" ),
     m_audio( "-" ),
-    m_backgroundColor( QColor( 0, 0, 0, 0 ) )
+    m_backgroundColor( QColor( 0, 0, 0, 0 ) ),
+    m_sourceType( QString( "video" ) ),
+    m_rating( 0 )
 {
     QPixmap pixmap = QPixmap( 100, 50 );
     pixmap.fill( Qt::black );
@@ -94,6 +101,53 @@ void ClipInformation::setPathName(QString name, QString path)
 {
     m_name = name;
     m_path = path;
+}
+
+//缩略图底部叠加「图片 / 视频」角标，方便用户一眼区分素材来源
+void ClipInformation::rebuildPreviewBadge( void )
+{
+    if( m_preview.isNull() )
+    {
+        m_previewBadged = QIcon();
+        return;
+    }
+
+    QPixmap pm = m_preview.pixmap( QSize( 320, 240 ) );
+    if( pm.isNull() )
+    {
+        m_previewBadged = QIcon();
+        return;
+    }
+
+    QPixmap out( pm.size() );
+    out.fill( Qt::transparent );
+
+    QPainter p( &out );
+    p.drawPixmap( 0, 0, pm );
+    p.setRenderHint( QPainter::SmoothPixmapTransform, true );
+
+    //角标：左上角图标（视频=Movie，照片=Image）
+    //增大图标 + 半透明圆角背景衬托，浅色图上也能看清
+    const int ic = qBound( 22, out.height() / 6, 40 );
+    QPixmap icon = QIcon( isImageClip() ? QStringLiteral( ":/RetinaIMG/RetinaIMG/Image-icon.png" )
+                                        : QStringLiteral( ":/RetinaIMG/RetinaIMG/Movie-icon.png" ) )
+                       .pixmap( QSize( ic, ic ) );
+    if( !icon.isNull() )
+    {
+        //先画一个半透明黑色圆角背景，让图标有边界
+        const int pad = qMax( 2, ic / 6 );
+        QRect bgRect( 4, 4, ic + pad * 2, ic + pad * 2 );
+        p.setPen( Qt::NoPen );
+        p.setBrush( QColor( 0, 0, 0, 130 ) );
+        p.drawRoundedRect( bgRect, 4, 4 );
+
+        p.setOpacity( 0.95 );
+        p.drawPixmap( 4 + pad, 4 + pad, icon );
+        p.setOpacity( 1.0 );
+    }
+    p.end();
+
+    m_previewBadged = QIcon( out );
 }
 
 //Read saved metadata

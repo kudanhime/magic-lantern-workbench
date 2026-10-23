@@ -39,12 +39,12 @@ PixelMapListDialog::PixelMapListDialog(QWidget *parent, MapType mapType) :
     if( m_mapType == FPM )
     {
         fpms = directory.entryList( QStringList() << "*.fpm" << "*.FPM", QDir::Files );
-        setWindowTitle( "Installed Focus Pixel Maps" );
+        setWindowTitle( tr( "Installed Focus Pixel Maps" ) );
     }
     else
     {
         fpms = directory.entryList( QStringList() << "*.bpm" << "*.BPM", QDir::Files );
-        setWindowTitle( "Installed Bad Pixel Maps" );
+        setWindowTitle( tr( "Installed Bad Pixel Maps" ) );
     }
 
     //For all maps
@@ -114,5 +114,5 @@ void PixelMapListDialog::showCurrentMap( mlvObject_t *pMlvObject )
         }
     }
     ui->labelMissing->setVisible( !foundMap );
-    if( !foundMap ) ui->labelMissing->setText( QString( "Map missing: %1" ).arg( name ) );
+    if( !foundMap ) ui->labelMissing->setText( tr( "Map missing: %1" ).arg( name ) );
 }

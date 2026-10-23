@@ -38,3 +38,54 @@ osx_installer/create-dmg-master/builder/create-dmg.builder
 platform/build-*
 *build*
 .qtcreator
+
+# ---------- 本地迭代备份（不进仓库）----------
+*.bak_*
+*.bak2_*
+*.bak
+*.orig
+*.rej
+
+# ---------- Qt / qmake 构建产物 ----------
+.qmake.stash
+.qmake.cache
+Makefile
+Makefile.Debug
+Makefile.Release
+object_script.*
+moc/
+obj/
+ui_*.h
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+*.o
+*.obj
+
+# ---------- 编译输出 ----------
+release/
+debug/
+*.exe
+*.dll
+*.a
+*.lib
+*.so
+*.dylib
+*.pdb
+*.ilk
+
+# ---------- 打包产物 ----------
+*.zip
+*.7z
+*.rar
+
+# ---------- 编辑器 / 系统 ----------
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/
+
+# ---------- 本地翻译辅助脚本（内部工具，不进仓库）----------
+scripts/b2_*

@@ -88,7 +88,7 @@ void GraphicsPickerScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     QStringList list;
     for( int i = 0; i < event->mimeData()->urls().count(); i++ )
     {
-        list.append( event->mimeData()->urls().at(i).path() );
+        list.append( event->mimeData()->urls().at(i).toLocalFile() );
     }
     emit filesDropped( list );
     event->acceptProposedAction();

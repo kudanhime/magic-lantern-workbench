@@ -38,7 +38,14 @@
 #include "DoubleClickLabel.h"
 #include "Scripting.h"
 #include "ReceiptCopyMaskDialog.h"
+#include "AiGradingDialog.h"
 #include "QRecentFilesMenu.h"
+
+class GuidedTourOverlay;
+class QComboBox;
+class QSlider;
+class QLabel;
+class ImageExportDialog;
 
 namespace Ui {
 class MainWindow;
@@ -50,9 +57,14 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(int &argc, char **argv, QWidget *parent = 0);
+    /* E8b v2: set to true when a command-line export (--export / --export-jpg)
+       has finished. main.cpp checks this BEFORE a.exec() so a batch script is
+       never left waiting on a live event loop. */
+    bool m_cliShouldQuit;
     ~MainWindow();
 
 protected:
+    void changeEvent( QEvent *event );      // 语言切换时重刷界面文字
     void timerEvent( QTimerEvent *t );
     void resizeEvent( QResizeEvent *event );
     bool event( QEvent *event );
@@ -65,10 +77,14 @@ signals:
     void frameReady( void );
 
 private slots:
+    void on_actionLanguageZh_triggered();   //切换到中文（写偏好后重启）
+    void on_actionLanguageEn_triggered();   //切换到英文（写偏好后重启）
     void openMlvSet( QStringList list );
     void timerFrameEvent( void );
     void on_actionOpen_triggered();
     void on_actionTranscodeAndImport_triggered();
+    void on_cardMlvVideo_clicked();
+    void on_cardCr2Photo_clicked();
     void on_actionFcpxmlImportAssistant_triggered();
     void on_actionFcpxmlSelectionAssistant_triggered();
     void on_actionAbout_triggered();
@@ -172,7 +188,17 @@ private slots:
 
     void on_actionGoto_First_Frame_triggered();
     void on_actionExport_triggered();
+
+    //导出：自动识别图片/视频（一个按钮通吃两种素材）
+    void exportImagesAuto();                       //图片批量导出（先弹设置窗口）
+    void exportCurrentFrameWithSettings( ImageExportDialog &dlg, const QString &outDir );   //导出当前帧（带设置）
+    bool exportDngFrame( const QString &outPath, int frameIdx );   //DNG 导出（RAW 层，含 DualISO 合并，不含调色）
+    bool openExportSettingsDialog();               //打开导出设置窗，返回是否确认
     void on_actionExportCurrentFrame_triggered();
+    void on_actionBatchExportImages_triggered();   //批量把图片素材导出成 JPG
+    void updateExportButtons( void );              //按素材类型亮/灰导出按钮
+    void onTypeFilterChanged( int index );
+    void onPreviewSizeChanged( int value );   //预览大小缩放         //素材池「全部/只看图片/只看视频」切换
     void on_checkBoxHighLightReconstruction_toggled(bool checked);
     void on_comboBoxUseCameraMatrix_currentIndexChanged(int index);
     void on_checkBoxCreativeAdjustments_toggled(bool checked);
@@ -204,6 +230,10 @@ private slots:
     void on_actionDontSwitchDebayerForPlayback_triggered();
     void on_actionExportSettings_triggered();
     void on_actionResetReceipt_triggered();
+    void on_actionAiGrading_triggered();
+    void onAiGradingReceiptChanged();
+    void on_actionAiLlmSettings_triggered();   //AI 菜单 LLM 设置
+    void on_groupBoxAiGrading_toggled( bool arg1 );   //AI 智能调色分组折叠
     void on_actionCopyRecept_triggered();
     void on_actionPasteReceipt_triggered();
     void on_actionNewSession_triggered();
@@ -219,6 +249,9 @@ private slots:
     void on_actionSelectAllClips_triggered();
     void on_actionDeleteSelectedClips_triggered();
     void on_actionHelp_triggered();
+    void on_actionTour_triggered();
+    void tourStepAboutToShow( int index );
+    void tourFinished( void );
     void on_actionCreateAllMappFilesNow_triggered();
     void on_actionBetterResizer_triggered();
     void on_actionShowInstalledFocusPixelMaps_triggered();
@@ -419,6 +452,8 @@ private slots:
     void on_lineEditTransferFunction_textChanged(const QString &arg1);
 
 private:
+    void applyLanguageNow( const QString &lang );   // 即时切换界面语言（不重启）
+    void retranslateDynamic( void );                // 手写文案的集中补刷
     Ui::MainWindow *ui;
     InfoDialog *m_pInfoDialog;
     StatusDialog *m_pStatusDialog;
@@ -433,6 +468,11 @@ private:
     GraphicsPickerScene* m_pScene;
     TimeCodeLabel* m_pTimeCodeImage;
     ReceiptCopyMaskDialog *m_pCopyMask;
+    AiGradingDialog *m_pAiGradingPanel;      // 常驻右侧 Edit 栏的 AI 调色面板
+    GuidedTourOverlay *m_pTourOverlay;       // 帮助 → 功能导览的遮罩浮层（按需创建）
+    bool m_tourAiPanelWasVisible;            // 导览开始前 AI 面板是否已可见（结束后恢复）
+    bool m_pendingImportIsImage = false;     // 本次导入是否来自 CR2/DNG 照片（决定素材池角标与按钮联动）
+    StarRatingDelegate *m_pStarDelegate;     // 素材池列表的星级交互 delegate
     Scripting* m_pScripting;
     uint8_t m_timeCodePosition;
     QLabel *m_pCachingStatus;
@@ -491,11 +531,16 @@ private:
     ReceiptSettings *m_pReceiptClipboard;
     QVector<ReceiptSettings*> m_exportQueue;
     SessionModel* m_pModel;
-    QSortFilterProxyModel* m_pProxyModel;
+    SessionTypeFilterProxyModel* m_pProxyModel;
+    QComboBox *m_pTypeFilterCombo;           //素材池类型筛选下拉框
+    QSlider *m_pPreviewSizeSlider;          //预览大小缩放滑块
+    QLabel *m_pPreviewSizeLabel;           //滑块数值标签
+    int m_previewThumbWidth;              //当前缩略图宽度（80~260）
     QItemSelectionModel* m_pSelectionModel;
     int m_lastClipBeforeExport;
     void drawFrame( void );
     void importNewMlv(QString fileName);
+    void importRawFiles( const QStringList &files );
     int openMlvForPreview(QString fileName);
     int openMlv(QString fileName);
     void playbackHandling( int timeDiff );

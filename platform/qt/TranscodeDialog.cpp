@@ -62,10 +62,20 @@ TranscodeDialog::~TranscodeDialog()
 }
 
 //Get the transcoded file list for importing
-QStringList TranscodeDialog::importList()
-{
-    return m_importList;
-}
+  QStringList TranscodeDialog::importList()
+  {
+      return m_importList;
+  }
+
+  //Show the dialog and immediately open the RAW file chooser.
+  //Used by the "Import CR2 Photo" card so that a single CR2 can be picked without
+  //the user first seeing the frame-rate/sequence-oriented dialog.
+  void TranscodeDialog::chooseAndImport( void )
+  {
+      show();
+      QApplication::processEvents();
+      on_pushButtonAddPics_clicked();
+  }
 
 //Add single pictures for sinlge MLVs
 void TranscodeDialog::on_pushButtonAddPics_clicked()

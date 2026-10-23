@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImageExportDialog</class>
+ <widget class="QDialog" name="ImageExportDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>660</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Image Export Settings</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayoutMain">
+   <item>
+    <widget class="QGroupBox" name="groupBoxFormat">
+     <property name="title">
+      <string>Format and Quality</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutFormat">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelFormat">
+        <property name="text">
+         <string>Format:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBoxFormat">
+        <item>
+         <property name="text">
+          <string>JPG (small, universal)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>PNG (lossless)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>TIFF (16-bit lossless)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>DNG (raw 14-bit, dual-ISO merged)</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelQuality">
+        <property name="text">
+         <string>Quality:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QWidget" name="widgetQuality" native="true">
+        <layout class="QHBoxLayout" name="horizontalLayoutQuality">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QSlider" name="horizontalSliderQuality">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>100</number>
+           </property>
+           <property name="value">
+            <number>95</number>
+           </property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelQualityValue">
+           <property name="minimumSize">
+            <size>
+             <width>36</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>95</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxSize">
+     <property name="title">
+      <string>Resolution</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutSize">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelScale">
+        <property name="text">
+         <string>Scale:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBoxScale">
+        <item>
+         <property name="text">
+          <string>100% (original size)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>75%</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>50%</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>25%</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Custom width</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelCustomWidth">
+        <property name="text">
+         <string>Width:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="spinBoxCustomWidth">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>64</number>
+        </property>
+        <property name="maximum">
+         <number>16384</number>
+        </property>
+        <property name="singleStep">
+         <number>100</number>
+        </property>
+        <property name="value">
+         <number>1920</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxOutput">
+     <property name="title">
+      <string>Output</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutOutput">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelOutputDir">
+        <property name="text">
+         <string>Folder:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QWidget" name="widgetOutputDir" native="true">
+        <layout class="QHBoxLayout" name="horizontalLayoutOutputDir">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="lineEditOutputDir">
+           <property name="placeholderText">
+            <string>Choose export folder...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QToolButton" name="toolButtonBrowse">
+           <property name="text">
+            <string>…</string>
+           </property>
+           <property name="toolTip">
+            <string>Choose output folder</string>
+           </property>
+           <property name="toolButtonStyle">
+            <enum>Qt::ToolButtonTextOnly</enum>
+           </property>
+          </widget>
+         </item>
+              <item row="1" column="0">
+       <widget class="QCheckBox" name="checkBoxUseSourceDir">
+        <property name="text">
+         <string>Output to the source media folder</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+        <property name="toolTip">
+         <string>When ticked, files go next to the current source media - no manual folder picking</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="labelUseSourceDirHint">
+        <property name="text">
+         <string>(default, can be turned off)</string>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxMeta">
+     <property name="title">
+      <string>Metadata and Colour</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutMeta">
+      <item row="0" column="0" colspan="2">
+       <widget class="QCheckBox" name="checkBoxKeepExif">
+        <property name="text">
+         <string>Keep EXIF (camera, lens, shutter, ISO, etc.)</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelColorSpace">
+        <property name="text">
+         <string>Colour space:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="comboBoxColorSpace">
+        <item>
+         <property name="text">
+          <string>sRGB (universal / web)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>AdobeRGB (print / wide gamut)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Leave as is (no conversion)</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxNaming">
+     <property name="title">
+      <string>Naming</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutNaming">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelNaming">
+        <property name="text">
+         <string>Name:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBoxNaming">
+        <item>
+         <property name="text">
+          <string>Original file name</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Original file name + index</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Prefix + index</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelPrefix">
+        <property name="text">
+         <string>Prefix:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="lineEditPrefix">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>export</string>
+        </property>
+        <property name="placeholderText">
+         <string>Prefix text</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxWatermark">
+     <property name="title">
+      <string>Watermark</string>
+     </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <layout class="QFormLayout" name="formLayoutWatermark">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelWmText">
+        <property name="text">
+         <string>Text:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="lineEditWmText">
+        <property name="text">
+         <string>Jiuduan Culture</string>
+        </property>
+        <property name="placeholderText">
+         <string>Watermark text</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelWmSize">
+        <property name="text">
+         <string>Size:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="spinBoxWmSize">
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>8</number>
+        </property>
+        <property name="maximum">
+         <number>400</number>
+        </property>
+        <property name="value">
+         <number>36</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelWmOpacity">
+        <property name="text">
+         <string>Opacity:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QSpinBox" name="spinBoxWmOpacity">
+        <property name="suffix">
+         <string> %</string>
+        </property>
+        <property name="minimum">
+         <number>5</number>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="value">
+         <number>55</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="labelWmPos">
+        <property name="text">
+         <string>Position:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QComboBox" name="comboBoxWmPos">
+        <item>
+         <property name="text">
+          <string>Top left</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Top right</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Bottom left</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Bottom right</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Centre</string>
+         </property>
+        </item>
+        <property name="currentIndex">
+         <number>3</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+     <property name="centerButtons">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

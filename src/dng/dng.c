@@ -37,15 +37,23 @@
 #include "../mlv/mcraw/mcraw.h"
 #include "../mlv/macros.h"
 
-#define IFD0_COUNT 41
+#define IFD0_COUNT 42                     /* 41 + SubIFDs, only used when a preview is written */
+#define IFD0_SUBIFDS_INDEX 17             /* IFD0 slot the SubIFDs tag is inserted at (tag order) */
 #define EXIF_IFD_COUNT 11
+#define PREVIEW_IFD_COUNT 18
 #define PACK(a) (((uint16_t)a[1] << 16) | ((uint16_t)a[0]))
 #define PACK2(a,b) (((uint16_t)b << 16) | ((uint16_t)a))
 #define STRING_ENTRY(a,b,c) (uint32_t)(strlen(a) + 1), add_string(a, b, c)
 #define RATIONAL_ENTRY(a,b,c,d) (d/2), add_array(a, b, c, d)
 #define RATIONAL_ENTRY2(a,b,c,d) 1, add_rational(a, b, c, d)
 #define ARRAY_ENTRY(a,b,c,d) d, add_array(a, b, c, d)
-#define HEADER_SIZE 1536
+/* 4096 instead of 1536: the IFD0 + EXIF + data area of a normal MLVApp DNG ends
+   at ~1180 bytes, the optional JPEG preview IFD (18 entries plus out of line
+   values) adds ~370 bytes on top (measured: header ends at ~1560). The constant
+   is only used for the header buffer size and as the initial value of
+   StripOffsets (overwritten with the real data_offset below), so growing it is
+   harmless. */
+#define HEADER_SIZE 4096
 #define COUNT(x) ((int)(sizeof(x)/sizeof((x)[0])))
 
 #define SOFTWARE_NAME "MLV App"
@@ -512,7 +520,12 @@ static void dng_fill_header(mlvObject_t * mlv_data, dngObject_t * dng_data, uint
         memcpy(header + position, tiff_header, sizeof(tiff_header));
         position += sizeof(tiff_header);
         
-        uint32_t exif_ifd_offset = (uint32_t)(position + sizeof(uint16_t) + IFD0_COUNT * sizeof(struct directory_entry) + sizeof(uint32_t));
+        /* IFD0 only carries the extra SubIFDs(330) entry when a preview is written;
+           without a preview the layout is exactly the pre-E2 one (41 entries) */
+        int preview_planned = (dng_data->preview_width > 0 && dng_data->preview_height > 0);
+        int ifd0_count = preview_planned ? IFD0_COUNT : IFD0_COUNT - 1;
+
+        uint32_t exif_ifd_offset = (uint32_t)(position + sizeof(uint16_t) + ifd0_count * sizeof(struct directory_entry) + sizeof(uint32_t));
         uint32_t data_offset = exif_ifd_offset + sizeof(uint16_t) + EXIF_IFD_COUNT * sizeof(struct directory_entry) + sizeof(uint32_t);
 
         camera_id_t *camid = camidGet(mlv_data->IDNT.cameraModel);
@@ -748,11 +761,117 @@ static void dng_fill_header(mlvObject_t * mlv_data, dngObject_t * dng_data, uint
             {tcLensModelExif,               ttAscii,    STRING_ENTRY((char*)mlv_data->LENS.lensName, header, &data_offset)},
         };
         
+        /* ------------------------------------------------------------------
+           Optional JPEG preview (thumbnail), DNG 1.6 SubIFD tree style: IFD0
+           keeps the raw main image (NewSubFileType = 0) and gains one extra
+           SubIFDs(330) entry pointing at a separate IFD that describes a
+           baseline JPEG (NewSubFileType = 1, Compression = 7, PI = 6 / YCbCr).
+           The JPEG bytes are appended behind the raw data by dngWriteFrame().
+
+           Only the preview *dimensions* are known at this point; the byte count
+           is a plain tag value which dngWriteFrame() patches into the header
+           after the JPEG has been rendered - see dngPlanPreview() /
+           dngPrepareFrame() / dngWriteFrame() in dng.h for why the render has to
+           happen after the raw frame was processed.
+           Tag set and values mirror Lightroom's preview IFD and the D2 prototype
+           (scripts/d2_dng_preview_prototype.py), both read back by exiftool
+           13.59 and LibRaw 0.22.1.
+           ------------------------------------------------------------------ */
+        dng_data->preview_bytecount_offset = 0;
+        if (preview_planned)
+        {
+            /* preview IFD table goes behind the IFD0/EXIF payload ... */
+            uint32_t preview_ifd_offset = data_offset;
+            if (preview_ifd_offset % 2) preview_ifd_offset += 1;
+
+            /* ... and its out of line values behind the table */
+            data_offset = preview_ifd_offset + (uint32_t)(sizeof(uint16_t) +
+                            PREVIEW_IFD_COUNT * sizeof(struct directory_entry) + sizeof(uint32_t));
+
+            /* BitsPerSample = 8,8,8 means three shorts, so it needs a data area slot */
+            uint16_t preview_bits[3] = {8, 8, 8};
+            uint32_t preview_bits_offset = data_offset;
+            memcpy(header + data_offset, preview_bits, sizeof(preview_bits));
+            data_offset += (uint32_t)sizeof(preview_bits);
+            if (data_offset % 2) data_offset += 1;
+
+            /* JPEG colour conversion tags, same numbers Lightroom writes (4:2:0) */
+            int32_t preview_ycbcr_coeff[6] = {299, 1000, 1000, 587, 587, 1000};
+            int32_t preview_ref_bw[12] = {0, 1, 1, 255, 255, 1, 1, 128, 128, 1, 1, 255};
+
+            char preview_datetime[32];
+            format_datetime(preview_datetime, mlv_data);
+            /* PreviewDateTime is ISO 8601, not the EXIF "YYYY:MM:DD" flavour */
+            preview_datetime[4] = '-';
+            preview_datetime[7] = '-';
+            preview_datetime[10] = 'T';
+
+            struct directory_entry PREVIEW_IFD[PREVIEW_IFD_COUNT] =
+            {
+                /* tags have to be in ascending order */
+                {tcNewSubFileType,              ttLong,     1,      sfPreviewImage},
+                {tcImageWidth,                  ttLong,     1,      (uint32_t)dng_data->preview_width},
+                {tcImageLength,                 ttLong,     1,      (uint32_t)dng_data->preview_height},
+                {tcBitsPerSample,               ttShort,    3,      preview_bits_offset},
+                {tcCompression,                 ttShort,    1,      ccJPEG},
+                {tcPhotometricInterpretation,   ttShort,    1,      piYCbCr},
+                {tcStripOffsets,                ttLong,     1,      0}, /* patched below */
+                {tcSamplesPerPixel,             ttShort,    1,      3},
+                {tcRowsPerStrip,                ttLong,     1,      (uint32_t)dng_data->preview_height},
+                {tcStripByteCounts,             ttLong,     1,      (uint32_t)dng_data->preview_size},
+                {tcPlanarConfiguration,         ttShort,    1,      pcInterleaved},
+                {tcYCbCrCoefficients,           ttRational, RATIONAL_ENTRY(preview_ycbcr_coeff, header, &data_offset, 6)},
+                {tcYCbCrSubSampling,            ttShort,    2,      0x00020002}, /* 2,2 = 4:2:0 */
+                {tcYCbCrPositioning,            ttShort,    1,      1},          /* centred */
+                {tcReferenceBlackWhite,         ttRational, RATIONAL_ENTRY(preview_ref_bw, header, &data_offset, 12)},
+                {tcPreviewApplicationName,      ttAscii,    STRING_ENTRY(SOFTWARE_NAME, header, &data_offset)},
+                {tcPreviewColorSpace,           ttLong,     1,      previewColorSpace_sRGB},
+                {tcPreviewDateTime,             ttAscii,    STRING_ENTRY(preview_datetime, header, &data_offset)},
+            };
+
+            for (int i = 0; i < PREVIEW_IFD_COUNT; i++)
+            {
+                if (PREVIEW_IFD[i].tag == tcStripOffsets)
+                {
+                    /* the preview lives behind the raw main image */
+                    PREVIEW_IFD[i].value = data_offset + (uint32_t)dng_data->image_size;
+                }
+                else if (PREVIEW_IFD[i].tag == tcStripByteCounts)
+                {
+                    /* remember where the JPEG byte count has to be patched in later */
+                    dng_data->preview_bytecount_offset = (size_t)preview_ifd_offset
+                                                       + sizeof(uint16_t)
+                                                       + (size_t)i * sizeof(struct directory_entry) + 8;
+                }
+            }
+
+            /* insert the SubIFDs(330) entry into IFD0 keeping the ascending tag
+               order: it belongs behind DateTime(306) and before CFARepeatPatternDim(33421) */
+            for (int i = ifd0_count - 1; i >= IFD0_SUBIFDS_INDEX; i--)
+            {
+                IFD0[i + 1] = IFD0[i];
+            }
+            IFD0[IFD0_SUBIFDS_INDEX].tag   = tcSubIFDs;
+            IFD0[IFD0_SUBIFDS_INDEX].type  = ttLong;
+            IFD0[IFD0_SUBIFDS_INDEX].count = 1;
+            IFD0[IFD0_SUBIFDS_INDEX].value = preview_ifd_offset;
+            ifd0_count = IFD0_COUNT;
+
+            /* serialize the preview IFD into the header (SubIFD tree, NextIFD stays 0) */
+            size_t preview_position = preview_ifd_offset;
+            add_ifd(PREVIEW_IFD, header, &preview_position, PREVIEW_IFD_COUNT, 0);
+
+            if (data_offset > HEADER_SIZE)
+            {
+                printf("cDNG: warning, header overflow with preview: %u bytes\n", (unsigned)data_offset);
+            }
+        }
+
         /* update the StripOffsets to the correct location
            the image data starts where our extra data ends */
         IFD0[9].value = data_offset;
 
-        add_ifd(IFD0, header, &position, IFD0_COUNT, 0);
+        add_ifd(IFD0, header, &position, ifd0_count, 0);
         add_ifd(EXIF_IFD, header, &position, EXIF_IFD_COUNT, 0);
         
         /* set real header size */
@@ -1123,8 +1242,25 @@ dngObject_t * initDngObject(mlvObject_t * mlv_data, int raw_state, double fps, i
     return dng_data;
 }
 
-/* save DNG file */
-int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_index, char * dng_filename, const char *prop_filename)
+/* declare that a preview with these dimensions will be embedded (E2) */
+void dngPlanPreview(dngObject_t * dng_data, int preview_width, int preview_height)
+{
+    if(!dng_data) return;
+    dng_data->preview_width  = (preview_width  > 0) ? preview_width  : 0;
+    dng_data->preview_height = (preview_height > 0) ? preview_height : 0;
+    dng_data->preview_size   = 0;
+}
+
+/* export phase 1: read the raw frame, apply low level raw processing and build
+   the DNG header (nothing is written to disk). The preview must be rendered only
+   after this call - see dng.h for the reason. */
+int dngPrepareFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_index, const char *props_filename)
+{
+    return dng_get_frame(mlv_data, dng_data, frame_index, props_filename);
+}
+
+/* export phase 2: write header + raw image + optional JPEG preview */
+int dngWriteFrame(dngObject_t * dng_data, char * dng_filename, const uint8_t * preview_jpeg, size_t preview_size)
 {
     FILE* dngf = fopen(dng_filename, "wb");
     if (!dngf)
@@ -1132,11 +1268,13 @@ int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_
         return 1;
     }
 
-    /* get filled dng_data struct */
-    if(dng_get_frame(mlv_data, dng_data, frame_index, prop_filename) != 0)
+    /* patch the real preview byte count into the already built header; if a
+       preview was planned but could not be rendered the IFD stays in place and
+       describes 0 bytes (readers then simply see no preview) */
+    if (dng_data->preview_bytecount_offset)
     {
-        fclose(dngf);
-        return 1;
+        uint32_t byte_count = (preview_jpeg && preview_size) ? (uint32_t)preview_size : 0;
+        memcpy(dng_data->header_buf + dng_data->preview_bytecount_offset, &byte_count, sizeof(byte_count));
     }
 
     /* write DNG header */
@@ -1145,7 +1283,7 @@ int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_
         fclose(dngf);
         return 1;
     }
-    
+
     /* write DNG image data */
     if (fwrite(dng_data->image_buf, dng_data->image_size, 1, dngf) != 1)
     {
@@ -1153,7 +1291,30 @@ int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_
         return 1;
     }
 
+    /* write the optional JPEG preview, it sits behind the raw main image */
+    if (preview_jpeg && preview_size)
+    {
+        if (fwrite(preview_jpeg, preview_size, 1, dngf) != 1)
+        {
+            fclose(dngf);
+            return 1;
+        }
+    }
+
     fclose(dngf);
+#ifndef STDOUT_SILENT
+    printf("Current frame '%s' written (%s, preview %u bytes)\n", dng_filename,
+           (preview_jpeg && preview_size) ? "JPEG" : "no preview",
+           (unsigned)((preview_jpeg && preview_size) ? preview_size : 0));
+#endif
+    return 0;
+}
+
+/* save DNG file - one shot variant (prepare + write, using the preview bytes that
+   were attached with dngSetPreview()); for a preview that is rendered on the fly
+   use the two phase API (dngPlanPreview / dngPrepareFrame / dngWriteFrame) */
+int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_index, char * dng_filename, const char *prop_filename)
+{
 #ifndef STDOUT_SILENT
     if (!frame_index)
     {
@@ -1173,9 +1334,39 @@ int saveDngFrame(mlvObject_t * mlv_data, dngObject_t * dng_data, uint32_t frame_
                 break;
         }
     }
-    printf("Current frame '%s' (frames saved: %u)\n", dng_filename, frame_index + 1);
 #endif
-    return 0;
+    if (dngPrepareFrame(mlv_data, dng_data, frame_index, prop_filename) != 0)
+    {
+        return 1;
+    }
+
+    return dngWriteFrame(dng_data, dng_filename, dng_data->preview_buf, dng_data->preview_size);
+}
+
+/* attach or clear the optional JPEG preview bytes (implies the preview plan) */
+void dngSetPreview(dngObject_t * dng_data, const uint8_t * jpeg_data, size_t jpeg_size, int preview_width, int preview_height)
+{
+    if(!dng_data) return;
+
+    if(dng_data->preview_buf) free(dng_data->preview_buf);
+    dng_data->preview_buf = NULL;
+    dng_data->preview_size = 0;
+
+    if(!jpeg_data || !jpeg_size || preview_width <= 0 || preview_height <= 0)
+    {
+        dng_data->preview_width = 0;
+        dng_data->preview_height = 0;
+        return;
+    }
+
+    uint8_t * buf = (uint8_t *)malloc(jpeg_size);
+    if(!buf) return;
+
+    memcpy(buf, jpeg_data, jpeg_size);
+    dng_data->preview_buf    = buf;
+    dng_data->preview_size   = jpeg_size;
+    dng_data->preview_width  = preview_width;
+    dng_data->preview_height = preview_height;
 }
 
 /* free all buffers used for DNG creation */
@@ -1185,5 +1376,6 @@ void freeDngObject(dngObject_t * dng_data)
     if(dng_data->image_buf) free(dng_data->image_buf);
     if(dng_data->image_buf2) free(dng_data->image_buf2);
     if(dng_data->image_buf_unpacked) free(dng_data->image_buf_unpacked);
+    if(dng_data->preview_buf) free(dng_data->preview_buf);
     free(dng_data);
 }

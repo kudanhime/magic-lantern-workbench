@@ -11,6 +11,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneDragDropEvent>
+#include <QMimeData>
 #include <QObject>
 #include <Qt>
 
@@ -35,7 +36,7 @@ protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event);
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event);
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event);
-    void dragEnterEvent(QGraphicsSceneDragDropEvent* event){(void)event;};
+    void dragEnterEvent(QGraphicsSceneDragDropEvent* event){ if( event->mimeData()->hasUrls() ) event->acceptProposedAction(); };
     void dragMoveEvent(QGraphicsSceneDragDropEvent* event){(void)event;};
     void dragLeaveEvent(QGraphicsSceneDragDropEvent* event){(void)event;};
     void dropEvent(QGraphicsSceneDragDropEvent* event);
