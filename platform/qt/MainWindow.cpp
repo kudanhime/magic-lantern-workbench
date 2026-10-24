@@ -650,9 +650,7 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
                 const int  eScale = qgetenv( "MLV_OUT_SCALE" ).isEmpty() ? 100 : QByteArray( qgetenv( "MLV_OUT_SCALE" ) ).toInt();
                 const int  eW     = qgetenv( "MLV_OUT_W" ).isEmpty() ? 0 : QByteArray( qgetenv( "MLV_OUT_W" ) ).toInt();
                 const bool eWm    = qgetenv( "MLV_OUT_WM" ) == "1";
-                const QString eWmTxt = qgetenv( "MLV_OUT_WMTXT" ).isEmpty()
-                                       ? QString::fromUtf8( "九段文化" )
-                                       : QString::fromUtf8( qgetenv( "MLV_OUT_WMTXT" ) );
+                const QString eWmTxt = QString::fromUtf8( qgetenv( "MLV_OUT_WMTXT" ) );
                 const int  eWmPos = qgetenv( "MLV_OUT_WMPOS" ).isEmpty() ? 3 : QByteArray( qgetenv( "MLV_OUT_WMPOS" ) ).toInt();
                 const int  eCs    = qgetenv( "MLV_OUT_CS" ).isEmpty() ? 0 : QByteArray( qgetenv( "MLV_OUT_CS" ) ).toInt();
 
@@ -718,6 +716,16 @@ MainWindow::MainWindow(int &argc, char **argv, QWidget *parent) :
             QTimer::singleShot( 1200, this, SLOT( on_actionTour_triggered() ) );
             break;
         }
+    }
+
+    //首次启动自动展示「功能导览」（可用「跳过」按钮或 Esc 随时结束；
+    //看过一次后写入 tourShown，之后不再自动弹，仍可从 帮助 → 功能导览 随时重看）。
+    //--tour-test 调试参数已在上面的循环里单独处理，此处不重复触发。
+    if( g_tourStartStep == 0 )
+    {
+        QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+        if( !set.value( "tourShown", false ).toBool() )
+            QTimer::singleShot( 1200, this, SLOT( on_actionTour_triggered() ) );
     }
 
     //语言菜单勾选状态与实际界面一致
@@ -7940,13 +7948,11 @@ static bool copyExifFrom( const QString &srcMedia, const QString &dstImage )
     if( srcMedia.isEmpty() || !QFile::exists( srcMedia ) ) return true;   //无源可抄，不报错
     if( !QFile::exists( dstImage ) ) return false;
 
-    // exiftool 位置：同目录 exiftool / exiftool.exe
+    // exiftool 位置：同目录 exiftool / exiftool.exe，或同目录下的 tools/ 子文件夹
     QString base = QCoreApplication::applicationDirPath();
     QStringList candidates;
     candidates << base + "/exiftool.exe" << base + "/exiftool";
-#ifdef Q_OS_WIN
-    candidates << "I:/AI_Tools/cr2hdr/exiftool.exe";
-#endif
+    candidates << base + "/tools/exiftool.exe" << base + "/tools/exiftool";
 
     QString exiftool;
     for( int i = 0; i < candidates.size(); i++ )
@@ -8162,7 +8168,7 @@ void MainWindow::exportCurrentFrameWithSettings( ImageExportDialog &dlg, const Q
             if( ci2 ) srcMedia = ci2->getPath();
         }
         if( !copyExifFrom( srcMedia, outPath ) )
-            exifNote = tr( "\n\n(Note: original EXIF could not be written - make sure exiftool.exe sits next to the app or in I:/AI_Tools/cr2hdr)" );
+            exifNote = tr( "\n\n(Note: original EXIF could not be written - put exiftool.exe next to the app, or in a tools/ subfolder)" );
     }
 
     if( ok )
@@ -12072,6 +12078,14 @@ void MainWindow::tourStepAboutToShow( int index )
 //导览结束（完成或跳过）：恢复 AI 面板原来的可见状态，并回收遮罩
 void MainWindow::tourFinished()
 {
+    //记住「已看过导览」：正常走完和主动跳过都会走到这里，两种都算看过，
+    //下次启动不再自动弹出（仍可从 帮助 → 功能导览 手动重看）。
+    {
+        QSettings set( QSettings::UserScope, "magiclantern.MLVApp", "MLVApp" );
+        set.setValue( "tourShown", true );
+        set.sync();
+    }
+
     if( m_pAiGradingPanel && !m_tourAiPanelWasVisible )
     {
         m_pAiGradingPanel->setVisible( false );

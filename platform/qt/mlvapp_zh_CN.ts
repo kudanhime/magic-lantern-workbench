@@ -64,8 +64,8 @@
     </message>
     <message>
         <location filename="AiGradingDialog.ui" line="199"/>
-        <source>deepseek-v4-flash</source>
-        <translation>deepseek-v4-flash</translation>
+        <source>deepseek-chat</source>
+        <translation>deepseek-chat</translation>
     </message>
     <message>
         <location filename="AiGradingDialog.ui" line="206"/>
@@ -1346,11 +1346,6 @@ It won&apos;t bring good results in shots with much movement and much detail.</s
     </message>
     <message>
         <location filename="ImageExportDialog.ui" line="387"/>
-        <source>Jiuduan Culture</source>
-        <translation>九段文化</translation>
-    </message>
-    <message>
-        <location filename="ImageExportDialog.ui" line="390"/>
         <source>Watermark text</source>
         <translation>水印文字</translation>
     </message>
@@ -1664,8 +1659,8 @@ It won&apos;t bring good results in shots with much movement and much detail.</s
     </message>
     <message>
         <location filename="LlmSettingsDialog.ui" line="56"/>
-        <source>deepseek-v4-flash</source>
-        <translation>deepseek-v4-flash</translation>
+        <source>deepseek-chat</source>
+        <translation>deepseek-chat</translation>
     </message>
     <message>
         <location filename="LlmSettingsDialog.ui" line="63"/>
@@ -4511,10 +4506,10 @@ Note: DNG stores raw data with no exposure/white-balance grading - continue colo
         <location filename="MainWindow.cpp" line="8165"/>
         <source>
 
-(Note: original EXIF could not be written - make sure exiftool.exe sits next to the app or in I:/AI_Tools/cr2hdr)</source>
+(Note: original EXIF could not be written - put exiftool.exe next to the app, or in a tools/ subfolder)</source>
         <translation>
 
-（注：原始 EXIF 未能写入——请确认同目录或 I:/AI_Tools/cr2hdr 下有 exiftool.exe）</translation>
+（注：原始 EXIF 未能写入——请把 exiftool.exe 放在程序同目录，或同目录下的 tools/ 子文件夹）</translation>
     </message>
     <message>
         <location filename="MainWindow.cpp" line="8169"/>

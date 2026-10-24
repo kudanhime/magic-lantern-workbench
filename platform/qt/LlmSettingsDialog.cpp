@@ -11,7 +11,7 @@ static const char *SETTINGS_TIMEOUT   = "aiGradingTimeoutSec";
 static const char *SETTINGS_MAXTOKENS = "aiGradingMaxTokens";
 
 static const char *DEFAULT_ENDPOINT    = "";   // 留空：由用户填自己的 OpenAI 兼容端点
-static const char *DEFAULT_MODEL       = "deepseek-v4-flash";
+static const char *DEFAULT_MODEL       = "deepseek-chat";
 static const int   DEFAULT_TIMEOUT_SEC = 120;
 static const int   DEFAULT_MAX_TOKENS  = 4000;
 

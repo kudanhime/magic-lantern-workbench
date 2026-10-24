@@ -304,7 +304,7 @@ void ImageExportDialog::loadFromSettings()
     ui->comboBoxNaming->setCurrentIndex( set.value( "imgExportNaming", 0 ).toInt() );
     ui->lineEditPrefix->setText( set.value( "imgExportPrefix", "export" ).toString() );
     ui->groupBoxWatermark->setChecked( set.value( "imgExportWmEnabled", false ).toBool() );
-    ui->lineEditWmText->setText( set.value( "imgExportWmText", "九段文化" ).toString() );
+    ui->lineEditWmText->setText( set.value( "imgExportWmText", QString() ).toString() );
     ui->spinBoxWmSize->setValue( set.value( "imgExportWmSize", 36 ).toInt() );
     ui->spinBoxWmOpacity->setValue( set.value( "imgExportWmOpacity", 55 ).toInt() );
     ui->comboBoxWmPos->setCurrentIndex( set.value( "imgExportWmPos", 3 ).toInt() );
