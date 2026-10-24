@@ -203,8 +203,9 @@ MLV 视频的预览、调色、转码导出，**一个界面全包，不用来�
 ## 下载与使用
 
 1. 到 [Releases](../../releases) 下载最新的 zip
-   - `魔灯工作台_vX.X_日期.zip` —— 中文版
-   - `MagicLanternWorkbench_EN_vX.X_日期.zip` —— 英文版
+   - `MagicLanternWorkbench_CN_vX.X_日期.zip` —— **中文版**（包内程序是 `魔灯工作台.exe`）
+   - `MagicLanternWorkbench_EN_vX.X_日期.zip` —— **英文版**（包内程序是 `MagicLanternWorkbench.exe`）
+   - 两个包内容完全一致，只有程序名和界面语言不同，**下你需要的那个就行**
 2. **解压到任意路径**（本版修好了中文路径问题）
 3. 双击里面的 `魔灯工作台.exe`（英文版是 `MagicLanternWorkbench.exe`）
 
